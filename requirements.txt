@@ -38,6 +38,7 @@ onnx==1.17.0
 onnxruntime==1.20.1
 onnxslim==0.1.48
 opencv-python==4.11.0.86
+opencv-python-headless==4.11.0.86
 packaging==24.2
 pandas==2.2.3
 pillow==11.1.0
