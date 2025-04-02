@@ -7,7 +7,8 @@ import os
 from PIL import Image
 import tempfile
 import io
-
+import av
+import streamlit_webrtc
 # Import your existing YOLOv8Detector class
 # This is the exact same class from your code, unchanged
 class YOLOv8Detector:
@@ -388,7 +389,18 @@ COCO_LABELS = [
     "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
     "scissors", "teddy bear", "hair drier", "toothbrush"
 ]
-
+class VideoProcessor:
+    def __init__(self, detector):
+        self.detector = detector
+        
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        
+        # Use your existing YOLOv8Detector
+        boxes, scores, class_ids, processed_img = self.detector.detect(img)
+        
+        # Return processed frame
+        return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
 # Streamlit UI
 def main():
     st.set_page_config(page_title="YOLOv8 Object Detection", layout="wide")
@@ -499,9 +511,84 @@ def main():
                     except Exception as e:
                         st.error(f"Error: {str(e)}")
     
+    # Modify the webcam section in tab2 to handle webcam access errors more gracefully
+
     with tab2:
         st.header("Webcam Object Detection")
-        st.warning("Note: Webcam access requires browser permissions.")
+        webcam_method = st.radio(
+        "Choose webcam method:",
+        ["OpenCV (works best locally)", "WebRTC (better for deployed apps)"]
+    )
+    
+    if webcam_method == "WebRTC (better for deployed apps)":
+        try:
+            # Check if the streamlit-webrtc package is available
+            import streamlit_webrtc
+            
+            st.info("Using browser-based WebRTC for webcam access. Allow camera permissions when prompted.")
+            
+            # Initialize the detector
+            detector = YOLOv8Detector(
+                model_path=model_path,
+                labels=COCO_LABELS,
+                confidence_threshold=confidence_threshold,
+                iou_threshold=iou_threshold
+            )
+            
+            # Create video processor class
+            processor = VideoProcessor(detector)
+            
+            # Create WebRTC streamer
+            webrtc_ctx = streamlit_webrtc.webrtc_streamer(
+                key="object-detection",
+                video_processor_factory=lambda: processor,
+                media_stream_constraints={"video": True, "audio": False},
+                async_processing=True,
+            )
+            
+            # Show status
+            if webrtc_ctx.state.playing:
+                st.success("Webcam is streaming! Object detection is being applied to the video feed.")
+            else:
+                st.warning("Click 'START' above to begin streaming from your webcam.")
+                
+            # Note about recording (currently not supported in this simple implementation)
+            if save_video:
+                st.warning("Video saving is not supported in WebRTC mode in this implementation.")
+                
+        except ImportError:
+            st.error("streamlit-webrtc package is not installed.")
+            st.info("To install it, run: pip install streamlit-webrtc")
+            
+    else:
+        # Your original OpenCV-based implementation here
+        # (The code from the first artifact)
+        # Add webcam selection options
+        st.sidebar.subheader("Webcam Options")
+        webcam_source = st.sidebar.selectbox(
+            "Webcam Source",
+            ["Default Webcam (0)", "Secondary Webcam (1)", "Custom Device Path", "Browser-based (Streamlit Component)"],
+            index=0
+        )
+        
+        if webcam_source == "Custom Device Path":
+            custom_path = st.sidebar.text_input("Device Path (e.g., /dev/video0)", "/dev/video0")
+        
+        # Add resolution settings
+        webcam_resolution = st.sidebar.selectbox(
+            "Webcam Resolution",
+            ["640x480", "800x600", "1280x720", "Custom"],
+            index=0
+        )
+        
+        if webcam_resolution == "Custom":
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                width = st.number_input("Width", min_value=320, max_value=1920, value=640, step=10)
+            with col2:
+                height = st.number_input("Height", min_value=240, max_value=1080, value=480, step=10)
+        else:
+            width, height = map(int, webcam_resolution.split('x'))
         
         # Store the webcam state
         if 'webcam_running' not in st.session_state:
@@ -514,109 +601,195 @@ def main():
             if not st.session_state.webcam_running:
                 if st.button("Start Webcam"):
                     st.session_state.webcam_running = True
-                    st.rerun()  # Updated from experimental_rerun()
+                    st.session_state.webcam_error = None
+                    st.rerun()
         
         with col2:
             if st.session_state.webcam_running:
                 if st.button("Stop Webcam"):
                     st.session_state.webcam_running = False
-                    st.rerun()  # Updated from experimental_rerun()
+                    st.rerun()
         
-        # Create a placeholder for the webcam feed
+        # Display information about browser permissions
+        st.info("Make sure to allow camera permissions in your browser when prompted.")
+        
+        # Create placeholders for webcam feed and error messages
         stframe = st.empty()
+        status_text = st.empty()
         
-        # Only run this code if webcam is active
         if st.session_state.webcam_running:
             try:
-                # Initialize webcam
-                cap = cv2.VideoCapture(0)
-                
-                if not cap.isOpened():
-                    st.error("Could not open webcam. Please check your camera connection.")
+                # Determine the webcam source
+                if webcam_source == "Default Webcam (0)":
+                    cam_source = 0
+                elif webcam_source == "Secondary Webcam (1)":
+                    cam_source = 1
+                elif webcam_source == "Custom Device Path":
+                    cam_source = custom_path
+                elif webcam_source == "Browser-based (Streamlit Component)":
+                    # Use streamlit-webrtc if available (need to be installed)
+                    st.error("Please install streamlit-webrtc package to use browser-based webcam")
+                    st.code("pip install streamlit-webrtc")
                     st.session_state.webcam_running = False
-                else:
-                    # Initialize detector
-                    detector = YOLOv8Detector(
-                        model_path=model_path,
-                        labels=COCO_LABELS,
-                        confidence_threshold=confidence_threshold,
-                        iou_threshold=iou_threshold
-                    )
+                    st.rerun()
+                
+                # Open webcam with specified settings
+                cap = cv2.VideoCapture(cam_source)
+                
+                # Set resolution
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                
+                # Check if webcam opened successfully
+                if not cap.isOpened():
+                    st.error(f"Failed to open webcam source: {cam_source}")
+                    st.session_state.webcam_running = False
                     
-                    # Create a temporary file to save video if needed
-                    temp_filename = None
-                    out = None
+                    # Provide more helpful diagnostics
+                    st.markdown("""
+                    ### Troubleshooting:
+                    1. Try a different webcam source
+                    2. Check if your camera is being used by another application
+                    3. Try running the app locally instead of deployed
+                    4. On Linux, check device permissions with `ls -l /dev/video*`
+                    """)
                     
-                    if save_video:
-                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-                        temp_filename = temp_file.name
-                        
-                        # Get webcam properties
-                        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        fps = 20
-                        
-                        # Create VideoWriter object
-                        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                        out = cv2.VideoWriter(temp_filename, fourcc, fps, (frame_width, frame_height))
+                    # Try listing available cameras (Linux)
+                    try:
+                        import subprocess
+                        video_devices = subprocess.check_output("ls -l /dev/video*", shell=True).decode()
+                        st.code(video_devices)
+                    except:
+                        pass
                     
-                    # Show status
-                    status_text = st.empty()
+                    st.rerun()
+                
+                # Initialize detector
+                detector = YOLOv8Detector(
+                    model_path=model_path,
+                    labels=COCO_LABELS,
+                    confidence_threshold=confidence_threshold,
+                    iou_threshold=iou_threshold
+                )
+                
+                # Create a temporary file to save video if needed
+                temp_filename = None
+                out = None
+                
+                if save_video:
+                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+                    temp_filename = temp_file.name
                     
-                    # Loop for a fixed number of frames to avoid infinite loop
-                    # Streamlit will rerun this when the user interacts with the stop button
-                    max_frames = 100000000000  # Adjust as needed
-                    for _ in range(max_frames):
-                        if not st.session_state.webcam_running:
-                            break
-                            
-                        ret, frame = cap.read()
-                        if not ret:
-                            st.error("Failed to capture frame from webcam.")
-                            break
-                        
+                    # Get webcam properties 
+                    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    fps = 20
+                    
+                    # Create VideoWriter object
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    out = cv2.VideoWriter(temp_filename, fourcc, fps, (frame_width, frame_height))
+                
+                # Show webcam info
+                actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                st.success(f"Webcam connected! Resolution: {actual_width}x{actual_height}")
+                
+                # Initialize frame counter and error counter
+                frame_count = 0
+                error_count = 0
+                max_errors = 5
+                
+                # Main webcam loop
+                while st.session_state.webcam_running and error_count < max_errors:
+                    ret, frame = cap.read()
+                    
+                    if not ret:
+                        error_count += 1
+                        st.warning(f"Failed to grab frame ({error_count}/{max_errors})")
+                        time.sleep(0.5)
+                        continue
+                    
+                    # Reset error counter on successful frame
+                    error_count = 0
+                    frame_count += 1
+                    
+                    try:
                         # Detect objects
-                        try:
-                            boxes, scores, class_ids, processed_frame = detector.detect(frame)
-                            
-                            # Save frame if recording
-                            if save_video and out is not None:
-                                out.write(processed_frame)
-                            
-                            # Convert to RGB for display
-                            rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
-                            
-                            # Display frame
-                            stframe.image(rgb_frame, channels="RGB", use_container_width=True)
-                            
-                            # Show detection count
-                            status_text.text(f"Detected {len(boxes)} objects")
-                            
-                        except Exception as e:
-                            st.error(f"Error during detection: {e}")
-                            # Display original frame if detection fails
-                            stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
+                        boxes, scores, class_ids, processed_frame = detector.detect(frame)
                         
-                        # Add slight delay to not overload the CPU
-                        time.sleep(0.01)
+                        # Save frame if recording
+                        if save_video and out is not None:
+                            out.write(processed_frame)
+                        
+                        # Convert to RGB for display
+                        rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+                        
+                        # Display frame
+                        stframe.image(rgb_frame, channels="RGB", use_container_width=True)
+                        
+                        # Show detection count
+                        status_text.text(f"Frame: {frame_count} | Detected {len(boxes)} objects")
+                        
+                    except Exception as e:
+                        st.error(f"Error during detection: {e}")
+                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        stframe.image(rgb_frame, channels="RGB", use_container_width=True)
                     
-                    # Release resources
-                    cap.release()
-                    if save_video and out is not None:
-                        out.release()
-                        
-                        # Offer download link for recorded video
-                        with open(temp_filename, 'rb') as f:
-                            st.download_button(
-                                label="Download Recorded Video",
-                                data=f,
-                                file_name="detection_video.mp4",
-                                mime="video/mp4"
-                            )
+                    # Add slight delay to not overload the CPU
+                    time.sleep(0.01)
+                
+                # Release resources
+                cap.release()
+                if save_video and out is not None:
+                    out.release()
+                    
+                    # Offer download link for recorded video
+                    with open(temp_filename, 'rb') as f:
+                        st.download_button(
+                            label="Download Recorded Video", 
+                            data=f,
+                            file_name="detection_video.mp4",
+                            mime="video/mp4"
+                        )
+                
+                # If stopped due to errors
+                if error_count >= max_errors:
+                    st.error("Stopped webcam due to repeated frame capture errors.")
+                    st.session_state.webcam_running = False
                 
             except Exception as e:
-                st.error(f"Error: {str(e)}")
-    
+                st.error(f"Webcam error: {str(e)}")
+                st.session_state.webcam_running = False
+                
+                # Provide troubleshooting help
+                st.markdown("""
+                ### Webcam Troubleshooting:
+                
+                1. **Browser permissions**: Make sure your browser has permission to access the camera
+                2. **Hardware access**: In cloud deployments, webcam access may be limited
+                3. **Alternative approach**: Consider installing the alternative package for browser-based capture:
+                """)
+                st.code("pip install streamlit-webrtc")
+                
+                # Add option for trying an alternative method
+                if st.button("Try Alternative Method"):
+                    st.session_state.try_alt_method = True
+                    st.rerun()
+        
+        # Show a placeholder message when webcam is not running
+        if not st.session_state.webcam_running:
+            stframe.info("Click 'Start Webcam' to begin detection")
+            
+        # Add browser-based fallback option using streamlit-webrtc if installed
+        if 'try_alt_method' in st.session_state and st.session_state.try_alt_method:
+            st.subheader("Alternative Webcam Method")
+            try:
+                import streamlit_webrtc
+                st.success("streamlit-webrtc is installed!")
+                st.info("This component allows webcam access via browser APIs, which may work better in deployed environments.")
+                # Implementation would go here
+            except ImportError:
+                st.error("streamlit-webrtc is not installed. Install it with: pip install streamlit-webrtc")
     with tab3:
         st.header("About")
         st.markdown("""
