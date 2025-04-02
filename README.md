@@ -5,9 +5,9 @@
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 
 Real-time object detection web application using YOLOv8 models with Streamlit. Detect objects in images or through your webcam with state-of-the-art accuracy and speed!
+<img width="1432" alt="Screenshot 2025-04-02 at 4 40 01 PM" src="https://github.com/user-attachments/assets/e63d9292-3269-4afe-9bc3-c50cd9c96f91" />
 
-![Demo](https://via.placeholder.com/800x450.png?text=YOLO+Vision+Pro+Demo) 
-*(Replace with actual demo GIF/screenshot)*
+
 
 ## Features ✨
 
@@ -23,7 +23,63 @@ Real-time object detection web application using YOLOv8 models with Streamlit. D
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/yolo-vision-pro.git
-cd yolo-vision-pro
-
+git clone https://github.com/koshal0304/webcamyolodetector.git
+cd webcamyolodetector
+```
 2. **Install dependencies**
+ ```bash
+pip install -r requirements.txt
+```
+3. **Download YOLOv8 ONNX models**
+- Download models from Ultralytics YOLOv8 Releases.
+- Place model files (yolov8n.onnx, yolov8s.onnx, etc.) in the project root.
+
+## Usage 🚀
+1. **Start the application**
+```bash
+streamlit run app.py
+```
+2. **Configure detection settings** in the sidebar:
+
+- Select model size (Nano, Small, Medium, Large)
+- Adjust confidence and IOU thresholds
+- Choose between image upload or webcam mode
+
+3. **Image Mode** 📷
+
+- Upload any JPG/PNG image
+- View detection results with bounding boxes
+- Download processed image with detections
+
+4. **Webcam Mode** 🌐
+
+- Choose between OpenCV or WebRTC implementation
+- Real-time object detection with FPS counter
+- Record and download detection videos (optional)
+
+## Model Zoo 🐘
+
+| Model        | Size   | Speed (FPS) | Accuracy (mAP) | Use Case          |
+|--------------|--------|-------------|----------------|-------------------|
+| YOLOv8 Nano  | 4.3MB  | 120+        | 37.3           | Mobile & Edge     |
+| YOLOv8 Small | 11.4MB | 80          | 44.9           | Balanced          |
+| YOLOv8 Medium| 25.9MB | 50          | 50.2           | General Purpose   |
+| YOLOv8 Large | 43.7MB | 30          | 52.9           | High Accuracy     |
+
+**Copy-Paste Version:**
+## Customization 🎨
+1. **Add custom models**
+- Convert custom YOLOv8 models to ONNX format
+
+```bash
+yolo export model=yolov8n.pt format=onnx
+```
+- Place in project root and update model paths in code
+
+2. **Modify class labels**
+- Edit `COCO_LABELS` list in app.py for custom datasets
+
+3. **UI customization**
+- Modify CSS styles in `load_custom_css()` function
+- Add new visual elements using Streamlit components
+
