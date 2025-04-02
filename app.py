@@ -404,137 +404,236 @@ class VideoProcessor:
 def load_custom_css():
     st.markdown("""
     <style>
-    /* Main app styling */
-    .main {
-        background-color: #f5f7fa;
-        padding: 2rem;
+    /* Mega Title Styling - UNCHANGED */
+    .logo-text {
+        font-size: 3.5rem !important;
+        font-weight: 900 !important;
+        font-family: 'Inter', sans-serif;
+        background: linear-gradient(45deg, #3b82f6, #8b5cf6, #ec4899);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        letter-spacing: -1.5px;
+        margin: 0.5rem 0;
+        line-height: 1.1;
+        animation: titleGlow 2s ease-in-out infinite alternate;
     }
     
-    /* Header styling */
-    .main .block-container h1 {
-        color: #1e3a8a;
-        font-weight: 700;
-        padding-bottom: 1rem;
-        border-bottom: 2px solid #3b82f6;
+    @keyframes titleGlow {
+        0% {
+            text-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        100% {
+            text-shadow: 0 8px 24px rgba(59, 130, 246, 0.5),
+                         0 0 40px rgba(59, 130, 246, 0.2);
+        }
+    }
+    
+    /* Add floating animation - UNCHANGED */
+    @keyframes float {
+        0% { transform: translateY(0px); }
+        50% { transform: translateY(-10px); }
+        100% { transform: translateY(0px); }
+    }
+    
+    .logo-container {
+        animation: float 3s ease-in-out infinite;
+        text-align: center;
         margin-bottom: 2rem;
+        padding: 1.5rem;
+        border-radius: 1rem;
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
     }
     
-    .main .block-container h2 {
-        color: #1e3a8a;
-        margin-top: 2rem;
+    /* Subtitle styling - UNCHANGED */
+    .logo-subtitle {
+        font-size: 1.4rem !important;
+        color: #94a3b8 !important;
+        letter-spacing: 0.5px;
+        margin-top: -0.5rem !important;
+        font-weight: 400;
+        max-width: 700px;
+        margin-left: auto;
+        margin-right: auto;
     }
     
-    /* Cards styling */
-    div[data-testid="stVerticalBlock"] {
-        background-color: white;
-        border-radius: 10px;
-        padding: 1rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        margin-bottom: 1rem;
+    /* Enhanced Card styling for content sections */
+    .stCard {
+        border-radius: 1.25rem !important;
+        border: 1px solid rgba(148, 163, 184, 0.15) !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
+        transition: all 0.4s ease !important;
+        padding: 1.5rem !important;
     }
     
-    /* Buttons styling */
+    .stCard:hover {
+        transform: translateY(-7px);
+        box-shadow: 0 25px 30px -12px rgba(0, 0, 0, 0.15) !important;
+        border-color: rgba(99, 102, 241, 0.3) !important;
+    }
+    
+    /* Improved Button styling */
     .stButton > button {
-        border-radius: 5px;
-        padding: 0.5rem 1rem;
-        font-weight: 500;
-        background-color: #3b82f6;
-        color: white;
-        border: none;
-        transition: background-color 0.3s;
+        border-radius: 0.75rem !important;
+        font-weight: 600 !important;
+        padding: 0.75rem 2rem !important;
+        transition: all 0.3s ease !important;
+        background: linear-gradient(135deg, #3b82f6, #8b5cf6) !important;
+        border: none !important;
+        color: white !important;
+        box-shadow: 0 5px 15px rgba(59, 130, 246, 0.3) !important;
     }
     
     .stButton > button:hover {
-        background-color: #1e3a8a;
+        transform: translateY(-3px) !important;
+        box-shadow: 0 15px 20px -8px rgba(59, 130, 246, 0.5) !important;
     }
     
-    /* Table styling */
-    .stTable {
-        border-radius: 5px;
-        overflow: hidden;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    .stButton > button:active {
+        transform: translateY(1px) !important;
     }
     
-    /* Sidebar styling */
-    .sidebar .sidebar-content {
-        background-color: #f0f4f8;
-        padding: 1rem;
+    /* Refined form elements */
+    .stSelectbox div[data-baseweb="select"] > div {
+        border-radius: 0.75rem !important;
+        border-color: rgba(148, 163, 184, 0.25) !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03) !important;
     }
     
-    /* Logo and branding */
-    .logo-container {
-        display: flex;
-        align-items: center;
-        margin-bottom: 1rem;
+    .stSelectbox div[data-baseweb="select"] > div:focus-within {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
     }
     
-    .logo-text {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #1e3a8a;
-        margin-left: 0.5rem;
+    .stTextInput > div > div > input {
+        border-radius: 0.75rem !important;
+        border-color: rgba(148, 163, 184, 0.25) !important;
+        transition: all 0.3s ease !important;
+        padding: 0.75rem 1rem !important;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03) !important;
     }
     
-    /* Tabs styling */
+    .stTextInput > div > div > input:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+    }
+    
+    /* Section headers - UNCHANGED */
+    h2 {
+        font-weight: 700 !important;
+        color: #1e293b !important;
+        letter-spacing: -0.5px !important;
+        margin-top: 2rem !important;
+        position: relative;
+        display: inline-block;
+    }
+    
+    h2:after {
+        content: '';
+        position: absolute;
+        bottom: -5px;
+        left: 0;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, #3b82f6, transparent);
+        border-radius: 3px;
+    }
+    
+    /* Improved dark mode adjustments */
+    @media (prefers-color-scheme: dark) {
+        h2 {
+            color: #e2e8f0 !important;
+        }
+        
+        .stCard {
+            background-color: rgba(30, 41, 59, 0.7) !important;
+        }
+        
+        .stSelectbox div[data-baseweb="select"] > div,
+        .stTextInput > div > div > input {
+            background-color: rgba(30, 41, 59, 0.6) !important;
+            color: #e2e8f0 !important;
+        }
+    }
+    
+    /* Enhanced checkbox styling */
+    .stCheckbox label {
+        font-size: 1.05rem !important;
+    }
+    
+    .stCheckbox label span {
+        color: #475569 !important;
+    }
+    
+    /* Enhanced custom scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: rgba(241, 245, 249, 0.15);
+        border-radius: 4px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+        border-radius: 4px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(45deg, #2563eb, #7c3aed);
+    }
+    
+    /* Enhanced background pattern */
+    body {
+        background-image: radial-gradient(circle at 1px 1px, rgba(99, 102, 241, 0.05) 1px, transparent 0) !important;
+        background-size: 20px 20px !important;
+    }
+    
+    /* Improve file uploader styling */
+    [data-testid="stFileUploader"] {
+        border-radius: 1rem !important;
+        border: 2px dashed rgba(148, 163, 184, 0.3) !important;
+        padding: 1.5rem !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    [data-testid="stFileUploader"]:hover {
+        border-color: rgba(59, 130, 246, 0.5) !important;
+        background-color: rgba(59, 130, 246, 0.03) !important;
+    }
+    
+    /* Improve tabs styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
+        gap: 0.5rem !important;
     }
     
     .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #f3f4f6;
-        border-radius: 4px 4px 0px 0px;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
+        border-radius: 0.5rem !important;
+        padding: 0.5rem 1rem !important;
+        transition: all 0.2s ease !important;
     }
     
-    .stTabs [aria-selected="true"] {
-        background-color: #3b82f6 !important;
-        color: white !important;
-    }
-    
-    /* Detection box styling */
-    .detection-box {
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        background-color: #f9fafb;
-    }
-    
-    /* Success message styling */
-    .success-message {
-        background-color: #d1fae5;
-        border-left: 5px solid #10b981;
-        padding: 1rem;
-        border-radius: 5px;
-        margin-bottom: 1rem;
-    }
-    
-    /* Info message styling */
-    .info-message {
-        background-color: #dbeafe;
-        border-left: 5px solid #3b82f6;
-        padding: 1rem;
-        border-radius: 5px;
-        margin-bottom: 1rem;
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background-color: rgba(59, 130, 246, 0.1) !important;
+        color: #3b82f6 !important;
+        font-weight: 600 !important;
     }
     </style>
     """, unsafe_allow_html=True)
 def display_header():
     st.markdown("""
     <div class="logo-container">
-        <div style="background-color: #3b82f6; width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="2" width="20" height="20" rx="2" ry="2"></rect>
-                <circle cx="12" cy="12" r="4"></circle>
-            </svg>
-        </div>
-        <span class="logo-text">YOLO Vision Pro</span>
+        <div class="logo-text">YOLO Vision Pro</div>
+        <div class="logo-subtitle">Advanced AI-Powered Object Detection</div>
     </div>
     """, unsafe_allow_html=True)
+
     
     st.markdown("""
     <p style="color: #64748b; margin-bottom: 2rem;">
@@ -621,7 +720,9 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
+    st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap" rel="stylesheet">
+""", unsafe_allow_html=True)
     # Load custom CSS
     load_custom_css()
     
