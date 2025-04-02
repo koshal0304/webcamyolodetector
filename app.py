@@ -394,13 +394,13 @@ class VideoProcessor:
         self.detector = detector
         
     def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        
-        # Use your existing YOLOv8Detector
-        boxes, scores, class_ids, processed_img = self.detector.detect(img)
-        
-        # Return processed frame
-        return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
+        try:
+            img = frame.to_ndarray(format="bgr24")
+            boxes, scores, class_ids, processed_img = self.detector.detect(img)
+            return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
+        except Exception as e:
+            print(f"Video processing error: {str(e)}")
+            return frame  # Return original frame if processing fails
 def load_custom_css():
     st.markdown("""
     <style>
