@@ -392,60 +392,15 @@ COCO_LABELS = [
 class VideoProcessor:
     def __init__(self, detector):
         self.detector = detector
-        # Add error handling and tracking
-        self.error_count = 0
-        self.max_errors = 5
-        self.frames_processed = 0
         
     def recv(self, frame):
-        try:
-            img = frame.to_ndarray(format="bgr24")
-            
-            # Simple check to make sure we have a valid image
-            if img is None or img.size == 0:
-                raise ValueError("Empty frame received")
-                
-            # Process smaller frames for better performance in deployment
-            # This is optional but can help with performance
-            if img.shape[1] > 640:  # If width is larger than 640px
-                scale = 640 / img.shape[1]
-                new_width = 640
-                new_height = int(img.shape[0] * scale)
-                img = cv2.resize(img, (new_width, new_height))
-            
-            # Use your existing YOLOv8Detector
-            boxes, scores, class_ids, processed_img = self.detector.detect(img)
-            
-            # Add frame counter on the image
-            self.frames_processed += 1
-            cv2.putText(processed_img, f"Frames: {self.frames_processed}", 
-                       (10, processed_img.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 
-                       0.5, (0, 255, 0), 1)
-            
-            # Reset error counter on successful processing
-            self.error_count = 0
-            
-            # Return processed frame
-            return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
-            
-        except Exception as e:
-            self.error_count += 1
-            print(f"Error in VideoProcessor: {e}, count: {self.error_count}")
-            
-            # If too many errors, just pass through the original frame
-            if self.error_count > self.max_errors:
-                print("Too many errors, passing through original frame")
-                return frame
-            
-            # Create a blank frame with error message if processing fails
-            try:
-                img = frame.to_ndarray(format="bgr24")
-                cv2.putText(img, "Processing Error", (50, 50), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                return av.VideoFrame.from_ndarray(img, format="bgr24")
-            except:
-                # If everything fails, return the original frame
-                return frame
+        img = frame.to_ndarray(format="bgr24")
+        
+        # Use your existing YOLOv8Detector
+        boxes, scores, class_ids, processed_img = self.detector.detect(img)
+        
+        # Return processed frame
+        return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
 def load_custom_css():
     st.markdown("""
     <style>
@@ -932,12 +887,9 @@ def main():
         )
         
         # Customize the webcam section for better usability
-        # Modified WebRTC section from your code
-# Replace the WebRTC section in tab2 with this improved version
-
         if webcam_method == "WebRTC (better for deployed apps)":
             try:
-                # Add this line to ensure the package is available
+                # Check if the streamlit-webrtc package is available
                 import streamlit_webrtc
                 
                 st.info("📹 Using browser-based WebRTC for webcam access. Allow camera permissions when prompted.")
@@ -950,23 +902,25 @@ def main():
                     iou_threshold=iou_threshold
                 )
                 
-                # Create video processor class - moved outside to prevent recreation issues
+                # Create video processor class
                 processor = VideoProcessor(detector)
                 
-                # Use a more compatible configuration for the streamer
+                # Add custom styling to the WebRTC component
+                st.markdown("""
+                <style>
+                .webrtc-container video {
+                    border-radius: 10px;
+                    border: 2px solid #3b82f6;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                # Create WebRTC streamer with custom styling
                 webrtc_ctx = streamlit_webrtc.webrtc_streamer(
                     key="object-detection",
                     video_processor_factory=lambda: processor,
-                    media_stream_constraints={
-                        "video": {"frameRate": {"ideal": 15}},
-                        "audio": False
-                    },
-                    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-                    video_html_attrs={
-                        "style": {"width": "100%", "height": "auto", "border-radius": "10px", "border": "2px solid #3b82f6"},
-                        "controls": False,
-                        "autoPlay": True,
-                    },
+                    media_stream_constraints={"video": True, "audio": False},
+                    async_processing=True,
                 )
                 
                 # Show status with better formatting
@@ -985,20 +939,6 @@ def main():
                 else:
                     st.warning("⚠️ Click 'START' above to begin streaming from your webcam.")
                     
-                # Add troubleshooting help for users
-                with st.expander("Troubleshooting WebRTC"):
-                    st.markdown("""
-                    ### Common WebRTC Issues:
-                    
-                    1. **Camera access blocked**: Make sure your browser has permission to access your camera
-                    2. **Firewall blocking**: Some corporate networks or firewalls may block WebRTC connections
-                    3. **Browser compatibility**: Try using Chrome or Firefox for best compatibility
-                    4. **Multiple tabs using camera**: Close other tabs that might be using your camera
-                    5. **Slow connection**: Reduce the frame rate or resolution if the stream is lagging
-                    
-                    If problems persist, try the OpenCV method instead.
-                    """)
-                    
                 # Note about recording
                 if save_video:
                     st.info("ℹ️ Video saving is not supported in WebRTC mode in this implementation.")
@@ -1006,7 +946,6 @@ def main():
             except ImportError:
                 st.error("❌ streamlit-webrtc package is not installed.")
                 st.info("💡 To install it, run: pip install streamlit-webrtc")
-                st.code("pip install streamlit-webrtc", language="bash")
         else:
             # Enhanced OpenCV-based implementation
             # Add webcam selection options with better UI
