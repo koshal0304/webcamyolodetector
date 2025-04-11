@@ -887,6 +887,8 @@ def main():
         )
         
         # Customize the webcam section for better usability
+        # Replace your existing WebRTC implementation in the tab2 section with this code:
+
         if webcam_method == "WebRTC (better for deployed apps)":
             try:
                 # Check if the streamlit-webrtc package is available
@@ -915,12 +917,20 @@ def main():
                 </style>
                 """, unsafe_allow_html=True)
                 
-                # Create WebRTC streamer with custom styling
+                # Define STUN servers for WebRTC
+                rtc_configuration = {
+                    "iceServers": [
+                        {"urls": ["stun:stun.l.google.com:19302"]}
+                    ]
+                }
+                
+                # Create WebRTC streamer with STUN server configuration
                 webrtc_ctx = streamlit_webrtc.webrtc_streamer(
                     key="object-detection",
                     video_processor_factory=lambda: processor,
                     media_stream_constraints={"video": True, "audio": False},
                     async_processing=True,
+                    rtc_configuration=rtc_configuration,  # Add this line
                 )
                 
                 # Show status with better formatting
@@ -938,6 +948,7 @@ def main():
                         """, unsafe_allow_html=True)
                 else:
                     st.warning("⚠️ Click 'START' above to begin streaming from your webcam.")
+                    st.info("💡 If the camera doesn't start, make sure you've granted camera permissions to this website.")
                     
                 # Note about recording
                 if save_video:
