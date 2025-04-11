@@ -13,7 +13,13 @@ coloredlogs==15.0.1
 contourpy==1.3.1
 cryptography==44.0.2
 cycler==0.12.1
-dnspython==2.7.0
+dnspython==2.7.0libgl1-mesa-glx
+libglib2.0-0
+ffmpeg
+libsm6
+libxext6
+libxrender1
+libegl1
 filelock==3.17.0
 flatbuffers==25.2.10
 fonttools==4.56.0
