@@ -728,9 +728,9 @@ def main():
     
     # Model selection (default to YOLOv8n for speed)
     model_options = {
-        "YOLOv8n (Fast)": "models/yolov8n.onnx",
-        "YOLOv8s (Balanced)": "models/yolov8s.onnx",
-        "YOLOv8m (Accurate)": "models/yolov8m.onnx"
+        "YOLOv8n (Fast)": "yolov8n.onnx",
+        "YOLOv8s (Balanced)": "yolov8s.onnx",
+        "YOLOv8m (Accurate)": "yolov8m.onnx"
     }
     selected_model = st.sidebar.selectbox("Select Model", list(model_options.keys()))
     model_path = model_options[selected_model]
