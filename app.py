@@ -8,9 +8,9 @@ from PIL import Image
 import tempfile
 import io
 import av
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
-
-
+import streamlit_webrtc
+# Import your existing YOLOv8Detector class
+# This is the exact same class from your code, unchanged
 class YOLOv8Detector:
     def __init__(self, model_path, labels, confidence_threshold=0.45, iou_threshold=0.45, input_width=640, input_height=640):
         """
@@ -36,35 +36,53 @@ class YOLOv8Detector:
             
         print(f"Loading ONNX model from {model_path}")
         
-        # Initialize ONNX runtime session - just use CPU to avoid CUDA issues
-        providers = ['CPUExecutionProvider']
+        # Initialize ONNX runtime session
+        # Try with CUDA first, fallback to CPU if CUDA not available
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
         try:
             self.session = ort.InferenceSession(model_path, providers=providers)
             print(f"Using providers: {self.session.get_providers()}")
         except Exception as e:
-            print(f"Failed to initialize ONNX session: {e}")
-            raise
+            print(f"Failed to use CUDA, falling back to CPU: {e}")
+            self.session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+            print("Using CPU for inference")
         
         # Get model info
         self.get_input_details()
         self.get_output_details()
         print(f"Model loaded successfully. Input shape: {self.input_shape}")
+        
+        # Print model output shape to debug
+        outputs = self.session.get_outputs()
+        print(f"Model output shape: {outputs[0].shape}")
     
     def get_input_details(self):
         """Get model input details"""
         model_inputs = self.session.get_inputs()
         self.input_names = [model_inputs[i].name for i in range(len(model_inputs))]
+        
         self.input_shape = model_inputs[0].shape
         self.channels = 3  # Usually fixed at 3 for RGB
         
+        print(f"Setting input dimensions to: {self.input_width}x{self.input_height}")
+    
     def get_output_details(self):
         """Get model output details"""
         model_outputs = self.session.get_outputs()
         self.output_names = [model_outputs[i].name for i in range(len(model_outputs))]
+        
+        # Print output names for debugging
+        print(f"Output names: {self.output_names}")
     
     def prepare_input(self, image):
         """
         Prepare image for inference
+        
+        Args:
+            image: Input image
+            
+        Returns:
+            Preprocessed image
         """
         self.img_height, self.img_width = image.shape[:2]
         
@@ -84,8 +102,21 @@ class YOLOv8Detector:
     def process_output(self, outputs):
         """
         Process ONNX model output for YOLOv8
+        
+        Args:
+            outputs: Model outputs
+            
+        Returns:
+            boxes, scores, class_ids
         """
+        # YOLOv8 has a different output format than YOLOv5/v7
+        # The output shape is typically [1, 84, num_boxes] where:
+        # - The first 4 values (0-3) are the box coordinates (x, y, w, h)
+        # - The rest (4-83) are the confidence scores for each class
+        
+        # Print output shape for debugging
         output = outputs[0]
+        print(f"Raw output shape: {output.shape}")
         
         # Handle different possible output formats
         if len(output.shape) == 3:  # [batch, boxes, elements]
@@ -95,6 +126,8 @@ class YOLOv8Detector:
             if predictions.shape[0] == 84 or predictions.shape[0] > 84:
                 # Transpose to have predictions in expected format [num_boxes, elements]
                 predictions = predictions.transpose(1, 0)
+            
+            print(f"Processed output shape: {predictions.shape}")
             
             # Extract boxes, scores, and class IDs
             boxes = predictions[:, :4]  # First 4 elements are x, y, w, h
@@ -121,10 +154,9 @@ class YOLOv8Detector:
                 
                 # Extract results after NMS
                 if len(indices) > 0:
-                    if isinstance(indices, np.ndarray):
-                        if len(indices.shape) == 2:
-                            indices = indices.flatten()
-                        
+                    if isinstance(indices[0], np.ndarray):  # OpenCV 4.5.4+ returns 1D array
+                        indices = indices.flatten()
+                    
                     final_boxes = [boxes[i] for i in indices]
                     final_scores = [scores[i] for i in indices]
                     final_class_ids = [class_ids[i] for i in indices]
@@ -137,7 +169,9 @@ class YOLOv8Detector:
                 return [], [], []
         
         # Fallback for other model output formats
+        # This is similar to the original code
         else:
+            print("Using fallback detection method")
             predictions = np.squeeze(output)
             
             # Get scores and filter by threshold
@@ -162,9 +196,8 @@ class YOLOv8Detector:
                     )
                     
                     if len(indices) > 0:
-                        if isinstance(indices, np.ndarray):
-                            if len(indices.shape) == 2:
-                                indices = indices.flatten()
+                        if isinstance(indices[0], np.ndarray):
+                            indices = indices.flatten()
                         
                         final_boxes = [boxes[i] for i in indices]
                         final_scores = [scores[i] for i in indices]
@@ -180,17 +213,41 @@ class YOLOv8Detector:
                 return [], [], []
     
     def extract_boxes(self, predictions):
-        """Extract boxes from predictions"""
+        """
+        Extract boxes from predictions
+        
+        Args:
+            predictions: Predictions from the model
+            
+        Returns:
+            Boxes in pixels
+        """
+        # Extract boxes from predictions
         boxes = predictions[:, :4]
+        
+        # Scale boxes to original image dimensions
         boxes = self.rescale_boxes(boxes)
+        
+        # Convert boxes to xyxy format (xmin, ymin, xmax, ymax)
         boxes = self.xywh2xyxy(boxes)
+        
         return boxes
     
     def rescale_boxes(self, boxes):
-        """Rescale boxes to original image dimensions"""
+        """
+        Rescale boxes to original image dimensions
+        
+        Args:
+            boxes: Boxes from the model (xywh or xyxy)
+            
+        Returns:
+            Rescaled boxes
+        """
+        # Rescale boxes to original image dimensions
         scale_x = self.img_width / self.input_width
         scale_y = self.img_height / self.input_height
         
+        # Scale each coordinate appropriately
         scaled_boxes = boxes.copy()
         scaled_boxes[:, 0] *= scale_x  # x1 or x
         scaled_boxes[:, 1] *= scale_y  # y1 or y
@@ -200,7 +257,15 @@ class YOLOv8Detector:
         return scaled_boxes
     
     def xywh2xyxy(self, x):
-        """Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2]"""
+        """
+        Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2]
+        
+        Args:
+            x: Boxes in xywh format
+            
+        Returns:
+            Boxes in xyxy format
+        """
         y = np.copy(x)
         y[:, 0] = x[:, 0] - x[:, 2] / 2  # top left x
         y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
@@ -209,10 +274,18 @@ class YOLOv8Detector:
         return y
     
     def draw_detections(self, image, boxes, scores, class_ids):
-        """Draw detections on the image"""
-        # Make a copy to avoid modifying the original
-        img_copy = image.copy()
+        """
+        Draw detections on the image
         
+        Args:
+            image: The input image
+            boxes: Bounding boxes
+            scores: Confidence scores
+            class_ids: Class indices
+            
+        Returns:
+            Image with detections
+        """
         for box, score, class_id in zip(boxes, scores, class_ids):
             # Ensure class_id is within the valid range
             if class_id < 0 or class_id >= len(self.labels):
@@ -240,7 +313,7 @@ class YOLOv8Detector:
             color = tuple([int(c) for c in color_bgr])
             
             # Draw rectangle
-            cv2.rectangle(img_copy, (x1, y1), (x2, y2), color, 2)
+            cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
             
             # Get size of the text
             (text_width, text_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
@@ -249,19 +322,26 @@ class YOLOv8Detector:
             if y1 - text_height - 5 < 0:
                 # If label would be above the image, put it inside the bounding box
                 text_y = y1 + text_height + 5
-                cv2.rectangle(img_copy, (x1, y1), (x1 + text_width, y1 + text_height + 5), color, -1)
-                cv2.putText(img_copy, label, (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                cv2.rectangle(image, (x1, y1), (x1 + text_width, y1 + text_height + 5), color, -1)
+                cv2.putText(image, label, (x1, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
             else:
                 # Draw filled rectangle for text background
-                cv2.rectangle(img_copy, (x1, y1 - text_height - 5), (x1 + text_width, y1), color, -1)
+                cv2.rectangle(image, (x1, y1 - text_height - 5), (x1 + text_width, y1), color, -1)
                 # Add text
-                cv2.putText(img_copy, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                cv2.putText(image, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
         
-        return img_copy
+        return image
     
     def detect(self, image):
         """
         Detect objects in the input image
+        
+        Args:
+            image: The input image
+            
+        Returns:
+            boxes, scores, class_ids: Detection results
+            processed_image: Image with detections
         """
         # Create a copy of the image for drawing
         processed_image = image.copy()
@@ -274,8 +354,16 @@ class YOLOv8Detector:
         outputs = self.session.run(self.output_names, {self.input_names[0]: input_tensor})
         end = time.time()
         
+        # Debug output shape
+        print(f"Output shape: {outputs[0].shape}")
+        
         # Process output
         boxes, scores, class_ids = self.process_output(outputs)
+        
+        print(f"Detections: {len(boxes)} objects found")
+        for i, (box, score, class_id) in enumerate(zip(boxes, scores, class_ids)):
+            class_name = self.labels[class_id] if 0 <= class_id < len(self.labels) else f"Unknown ({class_id})"
+            print(f"  {i+1}. {class_name}: {score:.2f} at {box}")
         
         # Draw detections
         processed_image = self.draw_detections(processed_image, boxes, scores, class_ids)
@@ -289,21 +377,6 @@ class YOLOv8Detector:
         
         return boxes, scores, class_ids, processed_image
 
-
-class VideoProcessor(VideoProcessorBase):
-    def __init__(self, detector):
-        self.detector = detector
-        
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        
-        # Use your existing YOLOv8Detector
-        boxes, scores, class_ids, processed_img = self.detector.detect(img)
-        
-        # Return processed frame
-        return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
-
-
 # COCO dataset labels
 COCO_LABELS = [
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
@@ -316,89 +389,263 @@ COCO_LABELS = [
     "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
     "scissors", "teddy bear", "hair drier", "toothbrush"
 ]
-
-
+class VideoProcessor:
+    def __init__(self, detector):
+        self.detector = detector
+        
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        
+        # Use your existing YOLOv8Detector
+        boxes, scores, class_ids, processed_img = self.detector.detect(img)
+        
+        # Return processed frame
+        return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
 def load_custom_css():
     st.markdown("""
     <style>
-    .main-title {
-        font-size: 2.5rem;
-        font-weight: 800;
+    /* Mega Title Styling - UNCHANGED */
+    .logo-text {
+        font-size: 3.5rem !important;
+        font-weight: 900 !important;
         font-family: 'Inter', sans-serif;
-        background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+        background: linear-gradient(45deg, #3b82f6, #8b5cf6, #ec4899);
         -webkit-background-clip: text;
         background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin: 1rem 0;
+        text-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        letter-spacing: -1.5px;
+        margin: 0.5rem 0;
+        line-height: 1.1;
+        animation: titleGlow 2s ease-in-out infinite alternate;
     }
     
-    .subtitle {
-        font-size: 1.2rem;
-        color: #94a3b8;
-        margin-bottom: 2rem;
-    }
-    
-    .card {
-        border-radius: 1rem;
-        border: 1px solid rgba(148, 163, 184, 0.15);
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        background-color: rgba(255, 255, 255, 0.02);
-    }
-    
-    .card:hover {
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-    }
-    
-    .btn-primary {
-        background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-        color: white;
-        border: none;
-    }
-    
-    .success-message {
-        background-color: rgba(34, 197, 94, 0.1);
-        color: #22c55e;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-    }
-    
-    .info-message {
-        background-color: rgba(59, 130, 246, 0.1);
-        color: #3b82f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-    }
-    
-    .detection-box {
-        background-color: #f8fafc;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        border: 1px solid #e2e8f0;
-    }
-    
-    @media (prefers-color-scheme: dark) {
-        .detection-box {
-            background-color: rgba(30, 41, 59, 0.5);
-            border: 1px solid rgba(226, 232, 240, 0.1);
+    @keyframes titleGlow {
+        0% {
+            text-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
         }
+        100% {
+            text-shadow: 0 8px 24px rgba(59, 130, 246, 0.5),
+                         0 0 40px rgba(59, 130, 246, 0.2);
+        }
+    }
+    
+    /* Add floating animation - UNCHANGED */
+    @keyframes float {
+        0% { transform: translateY(0px); }
+        50% { transform: translateY(-10px); }
+        100% { transform: translateY(0px); }
+    }
+    
+    .logo-container {
+        animation: float 3s ease-in-out infinite;
+        text-align: center;
+        margin-bottom: 2rem;
+        padding: 1.5rem;
+        border-radius: 1rem;
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
+    }
+    
+    /* Subtitle styling - UNCHANGED */
+    .logo-subtitle {
+        font-size: 1.4rem !important;
+        color: #94a3b8 !important;
+        letter-spacing: 0.5px;
+        margin-top: -0.5rem !important;
+        font-weight: 400;
+        max-width: 700px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    
+    /* Enhanced Card styling for content sections */
+    .stCard {
+        border-radius: 1.25rem !important;
+        border: 1px solid rgba(148, 163, 184, 0.15) !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
+        transition: all 0.4s ease !important;
+        padding: 1.5rem !important;
+    }
+    
+    .stCard:hover {
+        transform: translateY(-7px);
+        box-shadow: 0 25px 30px -12px rgba(0, 0, 0, 0.15) !important;
+        border-color: rgba(99, 102, 241, 0.3) !important;
+    }
+    
+    /* Improved Button styling */
+    .stButton > button {
+        border-radius: 0.75rem !important;
+        font-weight: 600 !important;
+        padding: 0.75rem 2rem !important;
+        transition: all 0.3s ease !important;
+        background: linear-gradient(135deg, #3b82f6, #8b5cf6) !important;
+        border: none !important;
+        color: white !important;
+        box-shadow: 0 5px 15px rgba(59, 130, 246, 0.3) !important;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-3px) !important;
+        box-shadow: 0 15px 20px -8px rgba(59, 130, 246, 0.5) !important;
+    }
+    
+    .stButton > button:active {
+        transform: translateY(1px) !important;
+    }
+    
+    /* Refined form elements */
+    .stSelectbox div[data-baseweb="select"] > div {
+        border-radius: 0.75rem !important;
+        border-color: rgba(148, 163, 184, 0.25) !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03) !important;
+    }
+    
+    .stSelectbox div[data-baseweb="select"] > div:focus-within {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+    }
+    
+    .stTextInput > div > div > input {
+        border-radius: 0.75rem !important;
+        border-color: rgba(148, 163, 184, 0.25) !important;
+        transition: all 0.3s ease !important;
+        padding: 0.75rem 1rem !important;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03) !important;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+    }
+    
+    /* Section headers - UNCHANGED */
+    h2 {
+        font-weight: 700 !important;
+        color: #1e293b !important;
+        letter-spacing: -0.5px !important;
+        margin-top: 2rem !important;
+        position: relative;
+        display: inline-block;
+    }
+    
+    h2:after {
+        content: '';
+        position: absolute;
+        bottom: -5px;
+        left: 0;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, #3b82f6, transparent);
+        border-radius: 3px;
+    }
+    
+    /* Improved dark mode adjustments */
+    @media (prefers-color-scheme: dark) {
+        h2 {
+            color: #e2e8f0 !important;
+        }
+        
+        .stCard {
+            background-color: rgba(30, 41, 59, 0.7) !important;
+        }
+        
+        .stSelectbox div[data-baseweb="select"] > div,
+        .stTextInput > div > div > input {
+            background-color: rgba(30, 41, 59, 0.6) !important;
+            color: #e2e8f0 !important;
+        }
+    }
+    
+    /* Enhanced checkbox styling */
+    .stCheckbox label {
+        font-size: 1.05rem !important;
+    }
+    
+    .stCheckbox label span {
+        color: #475569 !important;
+    }
+    
+    /* Enhanced custom scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: rgba(241, 245, 249, 0.15);
+        border-radius: 4px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+        border-radius: 4px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(45deg, #2563eb, #7c3aed);
+    }
+    
+    /* Enhanced background pattern */
+    body {
+        background-image: radial-gradient(circle at 1px 1px, rgba(99, 102, 241, 0.05) 1px, transparent 0) !important;
+        background-size: 20px 20px !important;
+    }
+    
+    /* Improve file uploader styling */
+    [data-testid="stFileUploader"] {
+        border-radius: 1rem !important;
+        border: 2px dashed rgba(148, 163, 184, 0.3) !important;
+        padding: 1.5rem !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    [data-testid="stFileUploader"]:hover {
+        border-color: rgba(59, 130, 246, 0.5) !important;
+        background-color: rgba(59, 130, 246, 0.03) !important;
+    }
+    
+    /* Improve tabs styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.5rem !important;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 0.5rem !important;
+        padding: 0.5rem 1rem !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background-color: rgba(59, 130, 246, 0.1) !important;
+        color: #3b82f6 !important;
+        font-weight: 600 !important;
     }
     </style>
     """, unsafe_allow_html=True)
-
-
 def display_header():
     st.markdown("""
-    <div style="text-align: center;">
-        <div class="main-title">YOLO Vision Pro</div>
-        <div class="subtitle">Advanced AI-Powered Object Detection</div>
+    <div class="logo-container">
+        <div class="logo-text">YOLO Vision Pro</div>
+        <div class="logo-subtitle">Advanced AI-Powered Object Detection</div>
     </div>
     """, unsafe_allow_html=True)
 
-
+    
+    st.markdown("""
+    <p style="color: #64748b; margin-bottom: 2rem;">
+        Advanced object detection powered by YOLOv8
+    </p>
+    """, unsafe_allow_html=True)
+def style_sidebar():
+    st.sidebar.markdown("""
+    <div style="text-align: center; padding: 1rem 0;">
+        <h2 style="color: #1e3a8a; margin-bottom: 1rem;">Detection Settings</h2>
+    </div>
+    """, unsafe_allow_html=True)
 def display_detection_results(boxes, scores, class_ids):
     if len(boxes) > 0:
         st.markdown('<div class="success-message">✅ Objects detected successfully!</div>', unsafe_allow_html=True)
@@ -435,108 +682,135 @@ def display_detection_results(boxes, scores, class_ids):
         st.table(results)
     else:
         st.markdown('<div class="info-message">ℹ️ No objects detected in this image.</div>', unsafe_allow_html=True)
+def create_results_card(image, boxes, scores, class_ids):
+    # Display the image
+    st.image(image, channels="BGR", use_container_width=True)
+    
+    # Create a summary card
+    st.markdown("""
+    <div class="detection-box">
+        <h3 style="margin-top: 0;">Detection Summary</h3>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+    """, unsafe_allow_html=True)
+    
+    # Get counts by class
+    class_counts = {}
+    for class_id in class_ids:
+        class_name = COCO_LABELS[class_id] if 0 <= class_id < len(COCO_LABELS) else f"Unknown ({class_id})"
+        class_counts[class_name] = class_counts.get(class_name, 0) + 1
+    
+    # Display top 5 detected objects
+    sorted_classes = sorted(class_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    
+    for class_name, count in sorted_classes:
+        st.markdown(f"""
+        <div style="background-color: #f3f4f6; border-radius: 8px; padding: 0.5rem 1rem; display: inline-block;">
+            <span style="font-weight: 600;">{class_name}</span>: {count}
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
-
-@st.cache_resource
-def load_model(model_path, conf_thresh, iou_thresh):
-    """Cache the model to prevent reloading"""
-    try:
-        detector = YOLOv8Detector(
-            model_path=model_path,
-            labels=COCO_LABELS,
-            confidence_threshold=conf_thresh,
-            iou_threshold=iou_thresh
-        )
-        return detector
-    except Exception as e:
-        st.error(f"Error loading model: {e}")
-        return None
-
-
+# Streamlit UI
 def main():
-    # Set page config
+    # Set page config FIRST before any other Streamlit commands
     st.set_page_config(
         page_title="YOLO Vision Pro | Object Detection",
         page_icon="🔍",
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    
+    st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap" rel="stylesheet">
+""", unsafe_allow_html=True)
     # Load custom CSS
     load_custom_css()
     
-    # Display header
+    # Display header with branding
     display_header()
     
-    # Sidebar configuration
-    with st.sidebar:
-        st.title("Model Settings")
-        
-        # Model selection with simplified options
-        model_option = st.selectbox(
-            "Select Model",
-            ["YOLOv8 Nano (⚡ Fast, 4.3MB)", 
-             "YOLOv8 Small (🚀 Balanced, 11.4MB)", 
-             "YOLOv8 Large (🎯 Accurate, 43.7MB)"],
-            index=0
-        )
-        
-        # Map model options to file paths
-        model_paths = {
-            "YOLOv8 Nano (⚡ Fast, 4.3MB)": "yolov8n.onnx",
-            "YOLOv8 Small (🚀 Balanced, 11.4MB)": "yolov8s.onnx",
-            "YOLOv8 Large (🎯 Accurate, 43.7MB)": "yolov8l.onnx"
-        }
-        
-        # Get selected model path
-        model_path = model_paths[model_option]
-        
-        # Check if model exists
-        if not os.path.exists(model_path):
-            st.error(f"⚠️ Model file not found: {model_path}")
-            st.info("📁 Please make sure to place the ONNX model files in the same directory as this script.")
-            return
-        
-        st.markdown("---")
-        st.subheader("Detection Parameters")
-        
-        # Detection parameters
-        confidence_threshold = st.slider(
-            "Confidence Threshold", 
-            min_value=0.1, 
-            max_value=1.0, 
-            value=0.3, 
-            step=0.05,
-            help="Minimum confidence level for detections"
-        )
-        
-        iou_threshold = st.slider(
-            "IOU Threshold", 
-            min_value=0.1, 
-            max_value=1.0, 
-            value=0.45, 
-            step=0.05,
-            help="Overlap threshold for bounding boxes"
-        )
-        
-        st.markdown("---")
-        
-        # Save video option
-        save_video = st.checkbox("Save Video", value=False)
+    # Rest of your code remains the same...
+    # Style the sidebar
+    style_sidebar()
     
-    # Load the model (cached)
-    detector = load_model(model_path, confidence_threshold, iou_threshold)
+    # Sidebar for configuration options
+    st.sidebar.title("Model Settings")
     
-    if detector is None:
-        st.error("Failed to load the model. Please check the model path and try again.")
+    
+    # Model selection with icons
+    model_options = {
+        "YOLOv8 Nano": "⚡ Fastest, 4.3MB",
+        "YOLOv8 Small": "🚀 Fast, 11.4MB", 
+        "YOLOv8 Medium": "⚖️ Balanced, 25.9MB",
+        "YOLOv8 Large": "🎯 Most Accurate, 43.7MB"
+    }
+    
+    model_option = st.sidebar.selectbox(
+        "Select Model",
+        list(model_options.keys()),
+        format_func=lambda x: f"{x} ({model_options[x]})",
+        index=0
+    )
+    
+    # Map model options to file paths
+    model_paths = {
+        "YOLOv8 Nano": "yolov8n.onnx",
+        "YOLOv8 Small": "yolov8s.onnx",
+        "YOLOv8 Medium": "yolov8m.onnx",
+        "YOLOv8 Large": "yolov8l.onnx"
+    }
+    
+    # Get selected model path
+    model_path = model_paths[model_option]
+    
+    # Check if model exists
+    if not os.path.exists(model_path):
+        st.sidebar.error(f"⚠️ Model file not found: {model_path}")
+        st.sidebar.info("📁 Please make sure to place the ONNX model files in the same directory as this script.")
         return
-        
-    # Create tabs for different options
+    
+    # Add a separator
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Detection Parameters")
+    
+    # Detection parameters with tooltips
+    confidence_threshold = st.sidebar.slider(
+        "Confidence Threshold", 
+        min_value=0.1, 
+        max_value=1.0, 
+        value=0.3, 
+        step=0.05,
+        help="Minimum confidence level for an object to be detected. Higher values reduce false positives."
+    )
+    
+    iou_threshold = st.sidebar.slider(
+        "IOU Threshold", 
+        min_value=0.1, 
+        max_value=1.0, 
+        value=0.45, 
+        step=0.05,
+        help="Intersection over Union threshold for Non-Maximum Suppression. Controls overlap of bounding boxes."
+    )
+    
+    # Add a separator
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Output Options")
+    
+    # Save video option in sidebar
+    save_video = st.sidebar.checkbox(
+        "Save Video", 
+        value=False,
+        help="Enable to save detection video for later download"
+    )
+    
+    # Create tabs for different input methods with icons
     tab1, tab2, tab3 = st.tabs(["📷 Image Upload", "🎥 Webcam", "ℹ️ About"])
     
     with tab1:
-        st.header("Upload Image")
+        st.markdown("<h2>Upload Image</h2>", unsafe_allow_html=True)
+        st.markdown("Upload an image to detect objects using YOLOv8")
         
+        # Create a container for the uploader with custom styling
         uploaded_file = st.file_uploader(
             "Choose an image...", 
             type=["jpg", "jpeg", "png"]
@@ -547,31 +821,44 @@ def main():
             file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
             image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
             
-            # Use columns for layout
+            # Use columns for better layout
             col1, col2 = st.columns(2)
             
             with col1:
-                st.subheader("Original Image")
+                st.markdown("<h3>Original Image</h3>", unsafe_allow_html=True)
                 st.image(image, channels="BGR", use_container_width=True)
             
-            # Process button
-            detect_btn = st.button("🔍 Detect Objects", type="primary", use_container_width=True)
+            # Process button with better styling
+            detect_btn = st.button(
+                "🔍 Detect Objects", 
+                type="primary",
+                use_container_width=True
+            )
             
             if detect_btn:
                 with st.spinner("Processing image..."):
                     try:
+                        # Initialize the detector
+                        detector = YOLOv8Detector(
+                            model_path=model_path,
+                            labels=COCO_LABELS,
+                            confidence_threshold=confidence_threshold,
+                            iou_threshold=iou_threshold
+                        )
+                        
                         # Perform detection
                         boxes, scores, class_ids, processed_image = detector.detect(image)
                         
                         with col2:
-                            st.subheader("Detection Results")
+                            st.markdown("<h3>Detection Results</h3>", unsafe_allow_html=True)
                             st.image(processed_image, channels="BGR", use_container_width=True)
                         
-                        # Display detection details
+                        # Display detection details using our helper function
                         display_detection_results(boxes, scores, class_ids)
                         
-                        # Download option
+                        # Download options
                         if len(boxes) > 0:
+                            # Option to download the processed image
                             processed_img = cv2.cvtColor(processed_image, cv2.COLOR_BGR2RGB)
                             pil_img = Image.fromarray(processed_img)
                             buf = io.BytesIO()
@@ -583,93 +870,166 @@ def main():
                                 file_name="detection_result.png",
                                 mime="image/png"
                             )
+                            
                     except Exception as e:
                         st.error(f"⚠️ Error: {str(e)}")
+                        st.info("Please try again with a different image or check the model configuration.")
     
     with tab2:
-        st.header("Webcam Object Detection")
+        st.markdown("<h2>Webcam Object Detection</h2>", unsafe_allow_html=True)
+        st.markdown("Use your webcam to detect objects in real-time")
         
+        # More visually appealing radio buttons
         webcam_method = st.radio(
             "Choose webcam method:",
-            ["WebRTC", "OpenCV"],
+            ["OpenCV (works best locally)", "WebRTC (better for deployed apps)"],
             horizontal=True
         )
         
-        if webcam_method == "WebRTC":
+        # Customize the webcam section for better usability
+        # Replace your existing WebRTC implementation in the tab2 section with this code:
+
+        if webcam_method == "WebRTC (better for deployed apps)":
             try:
-                st.info("📹 Using WebRTC for webcam access. Allow camera permissions when prompted.")
+                # Check if the streamlit-webrtc package is available
+                import streamlit_webrtc
                 
-                # Create video processor for WebRTC
+                st.info("📹 Using browser-based WebRTC for webcam access. Allow camera permissions when prompted.")
+                
+                # Initialize the detector
+                detector = YOLOv8Detector(
+                    model_path=model_path,
+                    labels=COCO_LABELS,
+                    confidence_threshold=confidence_threshold,
+                    iou_threshold=iou_threshold
+                )
+                
+                # Create video processor class
                 processor = VideoProcessor(detector)
+                
+                # Add custom styling to the WebRTC component
+                st.markdown("""
+                <style>
+                .webrtc-container video {
+                    border-radius: 10px;
+                    border: 2px solid #3b82f6;
+                }
+                </style>
+                """, unsafe_allow_html=True)
                 
                 # Define STUN servers for WebRTC
                 rtc_configuration = {
-                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+                    "iceServers": [
+                        {"urls": ["stun:stun.l.google.com:19302"]}
+                    ]
                 }
                 
-                # Create WebRTC streamer
-                webrtc_ctx = webrtc_streamer(
+                # Create WebRTC streamer with STUN server configuration
+                webrtc_ctx = streamlit_webrtc.webrtc_streamer(
                     key="object-detection",
                     video_processor_factory=lambda: processor,
                     media_stream_constraints={"video": True, "audio": False},
                     async_processing=True,
-                    rtc_configuration=rtc_configuration,
+                    rtc_configuration=rtc_configuration,  # Add this line
                 )
                 
-                # Display status
+                # Show status with better formatting
                 if webrtc_ctx.state.playing:
-                    st.success("✅ Webcam is active - object detection is running!")
+                    st.success("✅ Webcam is streaming! Object detection is being applied to the video feed.")
+                    
+                    # Add a stats container
+                    stats_container = st.container()
+                    with stats_container:
+                        st.markdown("""
+                        <div class="detection-box">
+                            <h3 style="margin-top: 0;">Detection Stats</h3>
+                            <p>Real-time object detection is active. Detection results are shown directly in the video feed.</p>
+                        </div>
+                        """, unsafe_allow_html=True)
                 else:
-                    st.warning("⚠️ Click 'START' to begin streaming.")
+                    st.warning("⚠️ Click 'START' above to begin streaming from your webcam.")
+                    st.info("💡 If the camera doesn't start, make sure you've granted camera permissions to this website.")
+                    
+                # Note about recording
+                if save_video:
+                    st.info("ℹ️ Video saving is not supported in WebRTC mode in this implementation.")
                 
-            except Exception as e:
-                st.error(f"WebRTC error: {str(e)}")
-                st.info("Try using the OpenCV method instead or check if streamlit-webrtc is installed.")
+            except ImportError:
+                st.error("❌ streamlit-webrtc package is not installed.")
+                st.info("💡 To install it, run: pip install streamlit-webrtc")
         else:
-            # OpenCV method
-            st.info("Select your webcam options below")
+            # Enhanced OpenCV-based implementation
+            # Add webcam selection options with better UI
+            st.markdown("""
+            <div class="detection-box">
+                <h3 style="margin-top: 0;">Webcam Configuration</h3>
+            """, unsafe_allow_html=True)
             
-            webcam_options = {
-                "Default Webcam": 0,
-                "Secondary Webcam": 1
-            }
-            
-            selected_webcam = st.selectbox("Select webcam", list(webcam_options.keys()))
-            cam_source = webcam_options[selected_webcam]
-            
-            # Resolution selection
-            resolution = st.selectbox(
-                "Resolution",
-                ["640x480", "800x600", "1280x720"],
+            webcam_source = st.selectbox(
+                "Webcam Source",
+                ["Default Webcam (0)", "Secondary Webcam (1)", "Custom Device Path"],
                 index=0
             )
-            width, height = map(int, resolution.split('x'))
             
-            # Store webcam state
+            if webcam_source == "Custom Device Path":
+                custom_path = st.text_input("Device Path (e.g., /dev/video0)", "/dev/video0")
+            
+            # Add resolution settings with visual enhancement
+            webcam_resolution = st.selectbox(
+                "Webcam Resolution",
+                ["640x480", "800x600", "1280x720", "Custom"],
+                index=0
+            )
+            
+            if webcam_resolution == "Custom":
+                col1, col2 = st.columns(2)
+                with col1:
+                    width = st.number_input("Width", min_value=320, max_value=1920, value=640, step=10)
+                with col2:
+                    height = st.number_input("Height", min_value=240, max_value=1080, value=480, step=10)
+            else:
+                width, height = map(int, webcam_resolution.split('x'))
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+            # Store the webcam state
             if 'webcam_running' not in st.session_state:
                 st.session_state.webcam_running = False
             
-            # Control buttons
+            # Create visually appealing control buttons
             col1, col2 = st.columns(2)
             
             with col1:
                 if not st.session_state.webcam_running:
                     if st.button("▶️ Start Webcam", type="primary", use_container_width=True):
                         st.session_state.webcam_running = True
-                        st.experimental_rerun()
+                        st.session_state.webcam_error = None
+                        st.rerun()
             
             with col2:
                 if st.session_state.webcam_running:
-                    if st.button("⏹️ Stop Webcam", use_container_width=True):
+                    if st.button("⏹️ Stop Webcam", type="secondary", use_container_width=True):
                         st.session_state.webcam_running = False
-                        st.experimental_rerun()
+                        st.rerun()
             
-            # Create placeholder for webcam feed
+            # Display information about browser permissions
+            st.info("🔒 Make sure to allow camera permissions in your browser when prompted.")
+            
+            # Create placeholders for webcam feed and error messages
             stframe = st.empty()
+            status_text = st.empty()
             
             if st.session_state.webcam_running:
                 try:
-                    # Open webcam
+                    # Determine the webcam source
+                    if webcam_source == "Default Webcam (0)":
+                        cam_source = 0
+                    elif webcam_source == "Secondary Webcam (1)":
+                        cam_source = 1
+                    elif webcam_source == "Custom Device Path":
+                        cam_source = custom_path
+                    
+                    # Open webcam with specified settings
                     cap = cv2.VideoCapture(cam_source)
                     
                     # Set resolution
@@ -678,11 +1038,41 @@ def main():
                     
                     # Check if webcam opened successfully
                     if not cap.isOpened():
-                        st.error(f"Failed to open webcam source: {cam_source}")
+                        st.error(f"❌ Failed to open webcam source: {cam_source}")
                         st.session_state.webcam_running = False
-                        st.experimental_rerun()
+                        
+                        # Provide more helpful diagnostics with better formatting
+                        st.markdown("""
+                        <div class="detection-box">
+                            <h3 style="margin-top: 0;">Troubleshooting</h3>
+                            <ol>
+                                <li>Try a different webcam source</li>
+                                <li>Check if your camera is being used by another application</li>
+                                <li>Try running the app locally instead of deployed</li>
+                                <li>On Linux, check device permissions with <code>ls -l /dev/video*</code></li>
+                            </ol>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Try listing available cameras (Linux)
+                        try:
+                            import subprocess
+                            video_devices = subprocess.check_output("ls -l /dev/video*", shell=True).decode()
+                            st.code(video_devices)
+                        except:
+                            pass
+                        
+                        st.rerun()
                     
-                    # Create temp file if saving video
+                    # Initialize detector
+                    detector = YOLOv8Detector(
+                        model_path=model_path,
+                        labels=COCO_LABELS,
+                        confidence_threshold=confidence_threshold,
+                        iou_threshold=iou_threshold
+                    )
+                    
+                    # Create a temporary file to save video if needed
                     temp_filename = None
                     out = None
                     
@@ -699,206 +1089,282 @@ def main():
                         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                         out = cv2.VideoWriter(temp_filename, fourcc, fps, (frame_width, frame_height))
                     
-                    # Show webcam info
+                    # Show webcam info with better styling
                     actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                     actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                     st.success(f"✅ Webcam connected! Resolution: {actual_width}x{actual_height}")
                     
-                    # Initialize counters
+                    # Initialize frame counter and error counter
                     frame_count = 0
                     error_count = 0
+                    max_errors = 5
+                    
+                    # Create a container for stats
+                    stats_col1, stats_col2, stats_col3 = st.columns(3)
+                    
+                    with stats_col1:
+                        frame_metric = st.empty()
+                    with stats_col2:
+                        fps_metric = st.empty()
+                    with stats_col3:
+                        object_metric = st.empty()
+                        
+                    # Empty container for detection stats
+                    detection_stats = st.empty()
+                    
+                    # Progress bar for recording (if enabled)
+                    if save_video:
+                        record_progress = st.progress(0)
+                    
                     # Main webcam loop
-                    st.info("⏳ Webcam streaming started. Processing frames...")
-                    
-                    # For FPS calculation
-                    fps_calculation_interval = 5  # Calculate FPS every 5 frames
                     start_time = time.time()
-                    fps = 0
+                    fps_counter = 0
+                    fps_value = 0
+                    last_fps_update = start_time
                     
-                    while st.session_state.webcam_running:
+                    # Detection stats
+                    class_counts = {}
+                    
+                    while st.session_state.webcam_running and error_count < max_errors:
+                        ret, frame = cap.read()
+                        
+                        if not ret:
+                            error_count += 1
+                            st.warning(f"⚠️ Failed to grab frame ({error_count}/{max_errors})")
+                            time.sleep(0.5)
+                            continue
+                        
+                        # Reset error counter on successful frame
+                        error_count = 0
+                        frame_count += 1
+                        fps_counter += 1
+                        
+                        # Update FPS calculation every second
+                        if time.time() - last_fps_update >= 1.0:
+                            fps_value = fps_counter / (time.time() - last_fps_update)
+                            fps_counter = 0
+                            last_fps_update = time.time()
+                        
                         try:
-                            # Read frame
-                            ret, frame = cap.read()
-                            
-                            if not ret:
-                                error_count += 1
-                                if error_count > 5:  # Allow some errors before stopping
-                                    st.error("❌ Failed to read from webcam. Stopping.")
-                                    break
-                                continue
-                            
-                            # Reset error counter on successful frame
-                            error_count = 0
-                            
-                            # Process frame for object detection
+                            # Detect objects
                             boxes, scores, class_ids, processed_frame = detector.detect(frame)
                             
-                            # Calculate FPS
-                            frame_count += 1
-                            if frame_count % fps_calculation_interval == 0:
-                                end_time = time.time()
-                                elapsed_time = end_time - start_time
-                                fps = fps_calculation_interval / elapsed_time if elapsed_time > 0 else 0
-                                start_time = time.time()
+                            # Update detection stats
+                            for class_id in class_ids:
+                                class_name = COCO_LABELS[class_id] if 0 <= class_id < len(COCO_LABELS) else "Unknown"
+                                class_counts[class_name] = class_counts.get(class_name, 0) + 1
                             
-                            # Display FPS on the frame
-                            cv2.putText(
-                                processed_frame, 
-                                f"FPS: {fps:.1f}", 
-                                (10, 30), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 
-                                1, 
-                                (0, 255, 0), 
-                                2
-                            )
-                            
-                            # Write to video file if saving
+                            # Save frame if recording
                             if save_video and out is not None:
                                 out.write(processed_frame)
+                                # Update progress bar (simulating progress)
+                                elapsed = time.time() - start_time
+                                if elapsed < 60:  # Assume 1 minute max
+                                    record_progress.progress(min(elapsed / 60, 1.0))
+                            
+                            # Convert to RGB for display
+                            rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
                             
                             # Display frame
-                            stframe.image(processed_frame, channels="BGR", use_column_width=True)
+                            stframe.image(rgb_frame, channels="RGB", use_container_width=True)
+                            
+                            # Update metrics
+                            frame_metric.metric("Frame", frame_count)
+                            fps_metric.metric("FPS", f"{fps_value:.1f}")
+                            object_metric.metric("Objects", len(boxes))
+                            
+                            # Show detection stats
+                            if frame_count % 30 == 0 and class_counts:  # Update every 30 frames
+                                # Sort by count and get top 5
+                                sorted_counts = sorted(class_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+                                
+                                # Create HTML for stats
+                                stats_html = """
+                                <div class="detection-box">
+                                    <h3 style="margin-top: 0;">Detection Stats</h3>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                                """
+                                
+                                for class_name, count in sorted_counts:
+                                    # Generate a color based on the class name
+                                    import hashlib
+                                    hue = int(hashlib.md5(class_name.encode()).hexdigest(), 16) % 360
+                                    stats_html += f"""
+                                    <div style="background-color: hsl({hue}, 70%, 90%); 
+                                                padding: 8px 16px; 
+                                                border-radius: 16px;
+                                                border: 1px solid hsl({hue}, 70%, 80%);">
+                                        <span style="font-weight: 600;">{class_name}</span>: {count}
+                                    </div>
+                                    """
+                                
+                                stats_html += """
+                                    </div>
+                                </div>
+                                """
+                                
+                                detection_stats.markdown(stats_html, unsafe_allow_html=True)
                             
                         except Exception as e:
-                            st.error(f"Error processing frame: {e}")
-                            break
+                            st.error(f"Error during detection: {e}")
+                            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            stframe.image(rgb_frame, channels="RGB", use_container_width=True)
+                        
+                        # Add slight delay to not overload the CPU
+                        time.sleep(0.01)
                     
-                    # Clean up
-                    if cap is not None:
-                        cap.release()
-                    
+                    # Release resources
+                    cap.release()
                     if save_video and out is not None:
                         out.release()
                         
-                        # Offer download option
+                        # Offer download link for recorded video with better styling
+                        st.markdown("""
+                        <div class="success-message">
+                            <h3 style="margin-top: 0;">Video Recording Complete</h3>
+                            <p>Your recording is ready to download!</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
                         with open(temp_filename, 'rb') as f:
-                            video_bytes = f.read()
-                        
-                        st.download_button(
-                            label="💾 Download Recorded Video",
-                            data=video_bytes,
-                            file_name="detection_video.mp4",
-                            mime="video/mp4"
-                        )
-                        
-                        # Clean up temp file
-                        os.unlink(temp_filename)
-                
+                            st.download_button(
+                                label="💾 Download Recorded Video", 
+                                data=f,
+                                file_name="detection_video.mp4",
+                                mime="video/mp4",
+                                type="primary",
+                                use_container_width=True
+                            )
+                    
+                    # If stopped due to errors
+                    if error_count >= max_errors:
+                        st.error("❌ Stopped webcam due to repeated frame capture errors.")
+                        st.session_state.webcam_running = False
+                    
                 except Exception as e:
                     st.error(f"❌ Webcam error: {str(e)}")
                     st.session_state.webcam_running = False
+                    st.info("Please try a different webcam source or method.")
+                    
+                    # Show detailed error with better formatting
+                    st.markdown(f"""
+                    <div class="detection-box">
+                        <h3 style="margin-top: 0;">Error Details</h3>
+                        <p>{str(e)}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
     
     with tab3:
-        st.header("About YOLO Vision Pro")
+        st.markdown("<h2>About YOLO Vision Pro</h2>", unsafe_allow_html=True)
         
+        # Two-column layout for about page
+        about_col1, about_col2 = st.columns([2, 1])
+        
+        with about_col1:
+            st.markdown("""
+            ### What is YOLO Vision Pro?
+            
+            YOLO Vision Pro is a user-friendly web application for real-time object detection using the state-of-the-art YOLOv8 models. It allows you to detect objects in images and video streams with just a few clicks.
+            
+            ### Key Features:
+            
+            - **Multiple Models**: Choose from different YOLOv8 variants balancing speed and accuracy
+            - **Real-time Detection**: Process webcam feeds in real-time
+            - **Flexible Configuration**: Adjust confidence thresholds for better results
+            - **Export Options**: Save processed images and videos
+            - **Intuitive Interface**: User-friendly design for both beginners and experts
+            
+            ### How to Use:
+            
+            1. Select a model from the sidebar
+            2. Set detection parameters as needed
+            3. Upload an image or use your webcam
+            4. View detection results and statistics
+            
+            ### About YOLOv8:
+            
+            YOLOv8 (You Only Look Once) is a state-of-the-art object detection algorithm that offers significant improvements in speed and accuracy compared to previous versions. It uses a single neural network to predict bounding boxes and class probabilities directly from full images in one evaluation.
+            """)
+            
+            # Add expandable technical details
+            with st.expander("📚 Technical Details"):
+                st.markdown("""
+                ### Implementation Details:
+                
+                - **ONNX Runtime**: This app uses ONNX Runtime for efficient model inference
+                - **OpenCV Integration**: Uses OpenCV for image processing and visualization
+                - **Streamlit Framework**: Built with Streamlit for a responsive web interface
+                - **WebRTC Support**: Optional browser-based webcam capturing for better deployment compatibility
+                
+                ### Performance Considerations:
+                
+                - For best performance, run this application locally
+                - Model loading time depends on the model size and your hardware
+                - Detection speed varies based on input resolution and model choice
+                - GPU acceleration is used when available
+                """)
+        
+        with about_col2:
+            # Display YOLOv8 architecture diagram or logo
+            st.markdown("""
+            <div style="border: 1px solid #ddd; border-radius: 10px; padding: 20px; text-align: center;">
+                <h3>YOLOv8 Architecture</h3>
+                <p>YOLOv8 uses a backbone-neck-head architecture:</p>
+                <ul style="text-align: left;">
+                    <li>Backbone: CSPDarknet</li>
+                    <li>Neck: C2f modules</li>
+                    <li>Head: Decoupled heads</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Add model comparison
+            st.markdown("""
+            <div style="border: 1px solid #ddd; border-radius: 10px; padding: 20px; margin-top: 20px;">
+                <h3>Model Comparison</h3>
+                <table style="width: 100%; text-align: center;">
+                    <tr>
+                        <th>Model</th>
+                        <th>Size</th>
+                        <th>Speed</th>
+                        <th>Accuracy</th>
+                    </tr>
+                    <tr>
+                        <td>Nano</td>
+                        <td>4.3MB</td>
+                        <td>⭐⭐⭐⭐⭐</td>
+                        <td>⭐⭐</td>
+                    </tr>
+                    <tr>
+                        <td>Small</td>
+                        <td>11.4MB</td>
+                        <td>⭐⭐⭐⭐</td>
+                        <td>⭐⭐⭐</td>
+                    </tr>
+                    <tr>
+                        <td>Medium</td>
+                        <td>25.9MB</td>
+                        <td>⭐⭐⭐</td>
+                        <td>⭐⭐⭐⭐</td>
+                    </tr>
+                    <tr>
+                        <td>Large</td>
+                        <td>43.7MB</td>
+                        <td>⭐⭐</td>
+                        <td>⭐⭐⭐⭐⭐</td>
+                    </tr>
+                </table>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Credits section at bottom of about page
+        st.markdown("---")
         st.markdown("""
-        <div class="card">
-            <h3>What is YOLO Vision Pro?</h3>
-            <p>YOLO Vision Pro is an advanced object detection application powered by YOLOv8 (You Only Look Once), 
-            a state-of-the-art computer vision model. This application allows you to detect and identify objects in 
-            images and video streams in real-time.</p>
-        </div>
-        
-        <div class="card">
-            <h3>Features</h3>
-            <ul>
-                <li>🔍 <strong>Real-time object detection</strong> in images and webcam feeds</li>
-                <li>📊 <strong>Multiple model options</strong> with different speed/accuracy tradeoffs</li>
-                <li>⚙️ <strong>Adjustable detection parameters</strong> for fine-tuning results</li>
-                <li>🎯 <strong>Accurate bounding boxes</strong> around detected objects</li>
-                <li>📷 <strong>Support for webcam streaming</strong> with two different methods</li>
-                <li>📥 <strong>Save and download</strong> processed images and videos</li>
-            </ul>
-        </div>
-        
-        <div class="card">
-            <h3>How It Works</h3>
-            <p>YOLO Vision Pro uses ONNX Runtime to run YOLOv8 models, providing fast and efficient inference across 
-            different hardware platforms. The application:</p>
-            <ol>
-                <li>Takes input from an image upload or webcam</li>
-                <li>Preprocesses the image to match model input requirements</li>
-                <li>Runs the YOLOv8 model to detect objects</li>
-                <li>Applies filters like confidence thresholds and NMS to refine detections</li>
-                <li>Draws bounding boxes and labels for identified objects</li>
-                <li>Displays or saves the processed results</li>
-            </ol>
-        </div>
-        
-        <div class="card">
-            <h3>Available Models</h3>
-            <table>
-                <tr>
-                    <th>Model</th>
-                    <th>Size</th>
-                    <th>Speed</th>
-                    <th>Accuracy</th>
-                    <th>Best For</th>
-                </tr>
-                <tr>
-                    <td>YOLOv8 Nano</td>
-                    <td>4.3 MB</td>
-                    <td>⚡ Very Fast</td>
-                    <td>Good</td>
-                    <td>Mobile, edge devices, speed-critical applications</td>
-                </tr>
-                <tr>
-                    <td>YOLOv8 Small</td>
-                    <td>11.4 MB</td>
-                    <td>🚀 Fast</td>
-                    <td>Better</td>
-                    <td>Balanced applications requiring both speed and accuracy</td>
-                </tr>
-                <tr>
-                    <td>YOLOv8 Large</td>
-                    <td>43.7 MB</td>
-                    <td>Normal</td>
-                    <td>🎯 Best</td>
-                    <td>Accuracy-critical applications with adequate computing power</td>
-                </tr>
-            </table>
-        </div>
-        
-        <div class="card">
-            <h3>Requirements</h3>
-            <p>To run this application, you need:</p>
-            <ul>
-                <li>Python 3.7 or higher</li>
-                <li>ONNX Runtime</li>
-                <li>OpenCV</li>
-                <li>Streamlit</li>
-                <li>Streamlit-WebRTC (for WebRTC webcam support)</li>
-                <li>YOLOv8 ONNX model files</li>
-            </ul>
+        <div style="text-align: center; color: #888;">
+            <p>YOLO Vision Pro | Built with Streamlit and YOLOv8</p>
+            <p>© 2024 | Open Source Project</p>
         </div>
         """, unsafe_allow_html=True)
-        
-        st.markdown("---")
-        
-        # Instructions section
-        st.subheader("How to Use")
-        
-        with st.expander("📷 Image Upload Instructions"):
-            st.markdown("""
-            1. Navigate to the "Image Upload" tab
-            2. Click "Choose an image..." to upload a photo
-            3. Click "Detect Objects" to process the image
-            4. View the results with bounding boxes and labels
-            5. Download the processed image if desired
-            """)
-        
-        with st.expander("🎥 Webcam Instructions"):
-            st.markdown("""
-            1. Navigate to the "Webcam" tab
-            2. Choose between WebRTC or OpenCV methods
-            3. Select your webcam and resolution settings
-            4. Click "Start Webcam" to begin
-            5. Watch as objects are detected in real-time
-            6. Optional: Enable "Save Video" in the sidebar to record the session
-            7. Click "Stop Webcam" when finished
-            8. Download the recorded video if available
-            """)
-
 
 if __name__ == "__main__":
     main()
