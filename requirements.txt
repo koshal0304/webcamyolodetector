@@ -1,8 +1,8 @@
+aiortc==1.5.0  # Downgrade to more stable version
 aioice==0.9.0
-aiortc==1.11.0
 altair==5.5.0
 attrs==25.3.0
-av==14.2.0
+av==10.0.0 
 blinker==1.9.0
 cachetools==5.5.2
 certifi==2025.1.31
@@ -45,10 +45,10 @@ protobuf==5.29.4
 psutil==7.0.0
 py-cpuinfo==9.0.0
 pyarrow==19.0.1
-pycparser==2.22
+pycparser==2.21
 pydeck==0.9.1
 pyee==13.0.0
-pylibsrtp==0.11.0
+pylibsrtp==0.8.0
 pyOpenSSL==25.0.0
 pyparsing==3.2.1
 python-dateutil==2.9.0.post0
@@ -61,8 +61,8 @@ scipy==1.15.2
 seaborn==0.13.2
 six==1.17.0
 smmap==5.0.2
-streamlit==1.44.0
-streamlit-webrtc==0.54.0
+streamlit==1.31.0  # Downgrade to a more stable version
+streamlit-webrtc==0.47.1
 sympy==1.13.1
 tenacity==9.0.0
 toml==0.10.2
