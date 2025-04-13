@@ -8,7 +8,7 @@ from PIL import Image
 import tempfile
 import io
 import av
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
+import streamlit_webrtc
 # Import your existing YOLOv8Detector class
 # This is the exact same class from your code, unchanged
 class YOLOv8Detector:
@@ -389,513 +389,442 @@ COCO_LABELS = [
     "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
     "scissors", "teddy bear", "hair drier", "toothbrush"
 ]
-
-# Now using VideoProcessorBase for better WebRTC compatibility
-class VideoProcessor(VideoProcessorBase):
+class VideoProcessor:
     def __init__(self, detector):
         self.detector = detector
-        self.frame_counter = 0
-        self.last_log_time = time.time()
-        self.frames_processed = 0
         
     def recv(self, frame):
-        self.frame_counter += 1
-        self.frames_processed += 1
-        
-        # Log processing frequency
-        current_time = time.time()
-        time_diff = current_time - self.last_log_time
-        if time_diff > 5.0:  # Log every 5 seconds
-            fps = self.frames_processed / time_diff
-            print(f"WebRTC processing FPS: {fps:.2f}")
-            self.frames_processed = 0
-            self.last_log_time = current_time
-            
         img = frame.to_ndarray(format="bgr24")
         
-        try:
-            # Use your existing YOLOv8Detector
-            boxes, scores, class_ids, processed_img = self.detector.detect(img)
-            
-            # Return processed frame
-            return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
-        except Exception as e:
-            print(f"Error in video processor: {e}")
-            # Return original frame if error occurs
-            return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-def load_custom_css():
-    st.markdown("""
-    <style>
-    /* Mega Title Styling - UNCHANGED */
-    .logo-text {
-        font-size: 3.5rem !important;
-        font-weight: 900 !important;
-        font-family: 'Inter', sans-serif;
-        background: linear-gradient(45deg, #3b82f6, #8b5cf6, #ec4899);
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-        letter-spacing: -1.5px;
-        margin: 0.5rem 0;
-        line-height: 1.1;
-        animation: titleGlow 2s ease-in-out infinite alternate;
-    }
-    
-    @keyframes titleGlow {
-        0% {
-            text-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-        }
-        100% {
-            text-shadow: 0 8px 24px rgba(59, 130, 246, 0.5),
-                         0 0 40px rgba(59, 130, 246, 0.2);
-        }
-    }
-    
-    /* Add floating animation - UNCHANGED */
-    @keyframes float {
-        0% { transform: translateY(0px); }
-        50% { transform: translateY(-10px); }
-        100% { transform: translateY(0px); }
-    }
-    
-    .logo-container {
-        animation: float 3s ease-in-out infinite;
-        text-align: center;
-        margin-bottom: 2rem;
-        padding: 1.5rem;
-        border-radius: 1rem;
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(10px);
-        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
-    }
-    
-    /* Subtitle styling - UNCHANGED */
-    .logo-subtitle {
-        font-size: 1.4rem !important;
-        color: #94a3b8 !important;
-        letter-spacing: 0.5px;
-        margin-top: -0.5rem !important;
-        font-weight: 400;
-        max-width: 700px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-    
-    /* Enhanced Card styling for content sections */
-    .stCard {
-        border-radius: 1.25rem !important;
-        border: 1px solid rgba(148, 163, 184, 0.15) !important;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08) !important;
-        transition: all 0.4s ease !important;
-        padding: 1.5rem !important;
-    }
-    
-    .stCard:hover {
-        transform: translateY(-7px);
-        box-shadow: 0 25px 30px -12px rgba(0, 0, 0, 0.15) !important;
-        border-color: rgba(99, 102, 241, 0.3) !important;
-    }
-    
-    /* Improved Button styling */
-    .stButton > button {
-        border-radius: 0.75rem !important;
-        font-weight: 600 !important;
-        padding: 0.75rem 2rem !important;
-        transition: all 0.3s ease !important;
-        background: linear-gradient(135deg, #3b82f6, #8b5cf6) !important;
-        border: none !important;
-        color: white !important;
-        box-shadow: 0 5px 15px rgba(59, 130, 246, 0.3) !important;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-3px) !important;
-        box-shadow: 0 15px 20px -8px rgba(59, 130, 246, 0.5) !important;
-    }
-    
-    .stButton > button:active {
-        transform: translateY(1px) !important;
-    }
-    
-    /* Refined form elements */
-    .stSelectbox div[data-baseweb="select"] > div {
-        border-radius: 0.75rem !important;
-        border-color: rgba(148, 163, 184, 0.25) !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03) !important;
-    }
-    
-    .stSelectbox div[data-baseweb="select"] > div:focus-within {
-        border-color: #3b82f6 !important;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
-    }
-    
-    .stTextInput > div > div > input {
-        border-radius: 0.75rem !important;
-        border-color: rgba(148, 163, 184, 0.25) !important;
-        transition: all 0.3s ease !important;
-        padding: 0.75rem 1rem !important;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03) !important;
-    }
-    
-    .stTextInput > div > div > input:focus {
-        border-color: #3b82f6 !important;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
-    }
-    
-    /* Section headers - UNCHANGED */
-    h2 {
-        font-weight: 700 !important;
-        color: #1e293b !important;
-        letter-spacing: -0.5px !important;
-        margin-top: 2rem !important;
-        position: relative;
-        display: inline-block;
-    }
-    
-    h2:after {
-        content: '';
-        position: absolute;
-        bottom: -5px;
-        left: 0;
-        width: 100%;
-        height: 3px;
-        background: linear-gradient(90deg, #3b82f6, transparent);
-        border-radius: 3px;
-    }
-    
-    /* Improved dark mode adjustments */
-    @media (prefers-color-scheme: dark) {
-        h2 {
-            color: #e2e8f0 !important;
-        }
+        # Use your existing YOLOv8Detector
+        boxes, scores, class_ids, processed_img = self.detector.detect(img)
         
-        .stCard {
-            background-color: rgba(30, 41, 59, 0.7) !important;
-        }
-        
-        .stSelectbox div[data-baseweb="select"] > div,
-        .stTextInput > div > div > input {
-            background-color: rgba(30, 41, 59, 0.6) !important;
-            color: #e2e8f0 !important;
-        }
-    }
-    
-    /* Enhanced checkbox styling */
-    .stCheckbox label {
-        font-size: 1.05rem !important;
-    }
-    
-    .stCheckbox label span {
-        color: #475569 !important;
-    }
-    
-    /* Enhanced custom scrollbar */
-    ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: rgba(241, 245, 249, 0.15);
-        border-radius: 4px;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: linear-gradient(45deg, #3b82f6, #8b5cf6);
-        border-radius: 4px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(45deg, #2563eb, #7c3aed);
-    }
-    
-    /* Enhanced background pattern */
-    body {
-        background-image: radial-gradient(circle at 1px 1px, rgba(99, 102, 241, 0.05) 1px, transparent 0) !important;
-        background-size: 20px 20px !important;
-    }
-    
-    /* Improve file uploader styling */
-    [data-testid="stFileUploader"] {
-        border-radius: 1rem !important;
-        border: 2px dashed rgba(148, 163, 184, 0.3) !important;
-        padding: 1.5rem !important;
-        transition: all 0.3s ease !important;
-    }
-    
-    [data-testid="stFileUploader"]:hover {
-        border-color: rgba(59, 130, 246, 0.5) !important;
-        background-color: rgba(59, 130, 246, 0.03) !important;
-    }
-    
-    /* Improve tabs styling */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 0.5rem !important;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 0.5rem !important;
-        padding: 0.5rem 1rem !important;
-        transition: all 0.2s ease !important;
-    }
-    
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: rgba(59, 130, 246, 0.1) !important;
-        color: #3b82f6 !important;
-        font-weight: 600 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-def display_header():
-    st.markdown("""
-    <div class="logo-container">
-        <div class="logo-text">YOLO Vision Pro</div>
-        <div class="logo-subtitle">Advanced AI-Powered Object Detection</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    
-    st.markdown("""
-    <p style="color: #64748b; margin-bottom: 2rem;">
-        Advanced object detection powered by YOLOv8
-    </p>
-    """, unsafe_allow_html=True)
-def style_sidebar():
-    st.sidebar.markdown("""
-    <div style="text-align: center; padding: 1rem 0;">
-        <h2 style="color: #1e3a8a; margin-bottom: 1rem;">Detection Settings</h2>
-    </div>
-    """, unsafe_allow_html=True)
-def display_detection_results(boxes, scores, class_ids):
-    if len(boxes) > 0:
-        st.markdown('<div class="success-message">✅ Objects detected successfully!</div>', unsafe_allow_html=True)
-        
-        st.markdown("<h3>Detection Results</h3>", unsafe_allow_html=True)
-        
-        # Display total counts by class
-        class_counts = {}
-        for class_id in class_ids:
-            class_name = COCO_LABELS[class_id] if 0 <= class_id < len(COCO_LABELS) else f"Unknown ({class_id})"
-            class_counts[class_name] = class_counts.get(class_name, 0) + 1
-        
-        # Create columns for summary stats
-        cols = st.columns(3)
-        with cols[0]:
-            st.metric("Total Objects", len(boxes))
-        with cols[1]:
-            st.metric("Object Classes", len(class_counts))
-        with cols[2]:
-            top_class = max(class_counts.items(), key=lambda x: x[1])[0] if class_counts else "None"
-            st.metric("Most Common", f"{top_class}")
-        
-        # Display results in a cleaner table
-        results = []
-        for i, (box, score, class_id) in enumerate(zip(boxes, scores, class_ids)):
-            x1, y1, x2, y2 = [int(round(coord)) for coord in box]
-            class_name = COCO_LABELS[class_id] if 0 <= class_id < len(COCO_LABELS) else f"Unknown ({class_id})"
-            results.append({
-                "Object": class_name,
-                "Confidence": f"{score:.2f}",
-                "Location": f"[{x1}, {y1}, {x2}, {y2}]"
-            })
-        
-        st.table(results)
-    else:
-        st.markdown('<div class="info-message">ℹ️ No objects detected in this image.</div>', unsafe_allow_html=True)
-
-
+        # Return processed frame
+        return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
+# Streamlit UI
 def main():
-    # Load custom CSS
-    load_custom_css()
+    st.set_page_config(page_title="YOLOv8 Object Detection", layout="wide")
     
-    # Display header
-    display_header()
+    # Add a custom logo or header
+    st.title("YOLOv8 Object Detection")
+    st.subheader("Upload an image or use your webcam to detect objects")
     
-    # Style sidebar
-    style_sidebar()
+    # Sidebar for configuration options
+    st.sidebar.title("Settings")
     
-    # App title
-    st.title("YOLOv8 Object Detection App")
+    # Model selection
+    model_option = st.sidebar.selectbox(
+        "Select Model",
+        ["YOLOv8 Nano", "YOLOv8 Small", "YOLOv8 Medium", "YOLOv8 Large"],
+        index=0
+    )
+    
+    # Map model options to file paths (assuming the models are in the same directory)
+    model_paths = {
+        "YOLOv8 Nano": "yolov8n.onnx",
+        "YOLOv8 Small": "yolov8s.onnx",
+        "YOLOv8 Medium": "yolov8m.onnx",
+        "YOLOv8 Large": "yolov8l.onnx"
+    }
+    
+    # Get selected model path
+    model_path = model_paths[model_option]
+    
+    # Check if model exists
+    if not os.path.exists(model_path):
+        st.sidebar.error(f"Model file not found: {model_path}")
+        st.sidebar.info("Please make sure to place the ONNX model files in the same directory as this script.")
+        return
+    
+    # Detection parameters
+    confidence_threshold = st.sidebar.slider("Confidence Threshold", 0.1, 1.0, 0.3, 0.05)
+    iou_threshold = st.sidebar.slider("IOU Threshold", 0.1, 1.0, 0.45, 0.05)
+    
+    # Save video option in sidebar (only defined once)
+    save_video = st.sidebar.checkbox("Save Video", value=False)
     
     # Create tabs for different input methods
-    tab1, tab2, tab3 = st.tabs(["📷 Webcam", "🖼️ Upload Image", "🎥 Upload Video"])
+    tab1, tab2, tab3 = st.tabs(["Image Upload", "Webcam", "About"])
     
-    # Sidebar configuration
-    st.sidebar.markdown("## Model Settings")
-    
-    # Model selection (default to YOLOv8n for speed)
-    model_options = {
-        "YOLOv8n (Fast)": "yolov8n.onnx",
-        "YOLOv8s (Balanced)": "yolov8s.onnx",
-        "YOLOv8m (Accurate)": "yolov8m.onnx"
-    }
-    selected_model = st.sidebar.selectbox("Select Model", list(model_options.keys()))
-    model_path = model_options[selected_model]
-    
-    # Detection settings
-    st.sidebar.markdown("## Detection Settings")
-    confidence_threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.45, 0.05)
-    iou_threshold = st.sidebar.slider("IoU Threshold", 0.0, 1.0, 0.45, 0.05)
-    
-    # Check if model file exists
-    if not os.path.exists(model_path):
-        st.error(f"Model file not found at {model_path}. Please make sure you have the model files in the 'models' directory.")
-        st.info("You can download YOLOv8 ONNX models from the official Ultralytics repository.")
-        return
-    
-    # Initialize detector
-    try:
-        detector = YOLOv8Detector(
-            model_path=model_path,
-            labels=COCO_LABELS,
-            confidence_threshold=confidence_threshold,
-            iou_threshold=iou_threshold
-        )
-        st.sidebar.success(f"Model loaded successfully: {selected_model}")
-    except Exception as e:
-        st.error(f"Error loading model: {e}")
-        return
-    
-    # Webcam tab
     with tab1:
-        st.header("Webcam Object Detection")
-        st.markdown("Use your webcam for real-time object detection.")
-        
-        # WebRTC configuration
-        rtc_configuration = RTCConfiguration(
-            {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-        )
-        
-        # Create a placeholder for the webrtc component
-        webrtc_ctx = webrtc_streamer(
-            key="object-detection",
-            video_processor_factory=lambda: VideoProcessor(detector),
-            rtc_configuration=rtc_configuration,
-            media_stream_constraints={"video": True, "audio": False},
-            async_processing=True,
-        )
-        
-        if webrtc_ctx.state.playing:
-            st.info("Webcam is active! Point your camera at objects to detect them.")
-    
-    # Image upload tab
-    with tab2:
-        st.header("Image Object Detection")
-        st.markdown("Upload an image for object detection.")
-        
+        st.header("Upload Image")
         uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
         
         if uploaded_file is not None:
-            # Read image
+            # Convert the file to an opencv image
             file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
             image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
             
             # Display original image
-            st.image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), caption="Uploaded Image", use_column_width=True)
+            st.image(image, channels="BGR", caption="Uploaded Image", use_container_width=True)
             
             # Process button
             if st.button("Detect Objects"):
                 with st.spinner("Processing..."):
-                    # Run detection
-                    boxes, scores, class_ids, processed_image = detector.detect(image)
-                    
-                    # Display processed image
-                    st.image(cv2.cvtColor(processed_image, cv2.COLOR_BGR2RGB), caption="Detected Objects", use_column_width=True)
-                    
-                    # Display detection results
-                    display_detection_results(boxes, scores, class_ids)
-    
-    # Video upload tab
-    with tab3:
-        st.header("Video Object Detection")
-        st.markdown("Upload a video for object detection.")
-        
-        uploaded_video = st.file_uploader("Choose a video...", type=["mp4", "mov", "avi"])
-        
-        if uploaded_video is not None:
-            # Save uploaded video to a temporary file
-            tfile = tempfile.NamedTemporaryFile(delete=False)
-            tfile.write(uploaded_video.read())
-            video_path = tfile.name
-            
-            # Open video file
-            cap = cv2.VideoCapture(video_path)
-            
-            # Get video info
-            fps = int(cap.get(cv2.CAP_PROP_FPS))
-            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            duration = frame_count / fps
-            
-            # Display video information
-            st.write(f"Video FPS: {fps}")
-            st.write(f"Duration: {duration:.2f} seconds")
-            st.write(f"Total Frames: {frame_count}")
-            
-            # Processing options
-            st.markdown("### Processing Options")
-            
-            processing_fps = st.slider("Processing FPS", 1, fps, min(fps, 15))
-            frame_step = max(1, int(fps / processing_fps))
-            
-            # Start processing button
-            if st.button("Process Video"):
-                # Create progress bar
-                progress_bar = st.progress(0)
-                
-                # Create a placeholder for the video frames
-                frame_placeholder = st.empty()
-                
-                # Process video frames
-                frame_idx = 0
-                processed_frames = []
-                
-                while cap.isOpened():
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    
-                    # Process only every nth frame based on frame_step
-                    if frame_idx % frame_step == 0:
-                        # Update progress
-                        progress = min(float(frame_idx) / frame_count, 1.0)
-                        progress_bar.progress(progress)
+                    try:
+                        # Initialize the detector
+                        detector = YOLOv8Detector(
+                            model_path=model_path,
+                            labels=COCO_LABELS,
+                            confidence_threshold=confidence_threshold,
+                            iou_threshold=iou_threshold
+                        )
                         
-                        # Run detection
+                        # Perform detection
+                        boxes, scores, class_ids, processed_image = detector.detect(image)
+                        
+                        # Display results
+                        st.image(processed_image, channels="BGR", caption="Detection Results", use_container_width=True)
+                        
+                        # Display detection details
+                        if len(boxes) > 0:
+                            st.success(f"Found {len(boxes)} objects!")
+                            
+                            # Create a dataframe to display results
+                            results = []
+                            for i, (box, score, class_id) in enumerate(zip(boxes, scores, class_ids)):
+                                x1, y1, x2, y2 = [int(round(coord)) for coord in box]
+                                class_name = COCO_LABELS[class_id] if 0 <= class_id < len(COCO_LABELS) else f"Unknown ({class_id})"
+                                results.append({
+                                    "Object": class_name,
+                                    "Confidence": f"{score:.2f}",
+                                    "Location": f"[{x1}, {y1}, {x2}, {y2}]"
+                                })
+                            
+                            st.table(results)
+                            
+                            # Option to download the processed image
+                            processed_img = cv2.cvtColor(processed_image, cv2.COLOR_BGR2RGB)
+                            pil_img = Image.fromarray(processed_img)
+                            buf = io.BytesIO()
+                            pil_img.save(buf, format="PNG")
+                            
+                            st.download_button(
+                                label="Download Processed Image",
+                                data=buf.getvalue(),
+                                file_name="detection_result.png",
+                                mime="image/png"
+                            )
+                        else:
+                            st.info("No objects detected.")
+                            
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+    
+    # Modify the webcam section in tab2 to handle webcam access errors more gracefully
+
+    with tab2:
+        st.header("Webcam Object Detection")
+        webcam_method = st.radio(
+        "Choose webcam method:",
+        ["OpenCV (works best locally)", "WebRTC (better for deployed apps)"]
+    )
+    
+    if webcam_method == "WebRTC (better for deployed apps)":
+        try:
+            # Check if the streamlit-webrtc package is available
+            import streamlit_webrtc
+            
+            st.info("Using browser-based WebRTC for webcam access. Allow camera permissions when prompted.")
+            
+            # Initialize the detector
+            detector = YOLOv8Detector(
+                model_path=model_path,
+                labels=COCO_LABELS,
+                confidence_threshold=confidence_threshold,
+                iou_threshold=iou_threshold
+            )
+            
+            # Create video processor class
+            processor = VideoProcessor(detector)
+            
+            # Create WebRTC streamer
+            webrtc_ctx = streamlit_webrtc.webrtc_streamer(
+                key="object-detection",
+                video_processor_factory=lambda: processor,
+                media_stream_constraints={"video": True, "audio": False},
+                async_processing=True,
+            )
+            
+            # Show status
+            if webrtc_ctx.state.playing:
+                st.success("Webcam is streaming! Object detection is being applied to the video feed.")
+            else:
+                st.warning("Click 'START' above to begin streaming from your webcam.")
+                
+            # Note about recording (currently not supported in this simple implementation)
+            if save_video:
+                st.warning("Video saving is not supported in WebRTC mode in this implementation.")
+                
+        except ImportError:
+            st.error("streamlit-webrtc package is not installed.")
+            st.info("To install it, run: pip install streamlit-webrtc")
+            
+    else:
+        # Your original OpenCV-based implementation here
+        # (The code from the first artifact)
+        # Add webcam selection options
+        st.sidebar.subheader("Webcam Options")
+        webcam_source = st.sidebar.selectbox(
+            "Webcam Source",
+            ["Default Webcam (0)", "Secondary Webcam (1)", "Custom Device Path", "Browser-based (Streamlit Component)"],
+            index=0
+        )
+        
+        if webcam_source == "Custom Device Path":
+            custom_path = st.sidebar.text_input("Device Path (e.g., /dev/video0)", "/dev/video0")
+        
+        # Add resolution settings
+        webcam_resolution = st.sidebar.selectbox(
+            "Webcam Resolution",
+            ["640x480", "800x600", "1280x720", "Custom"],
+            index=0
+        )
+        
+        if webcam_resolution == "Custom":
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                width = st.number_input("Width", min_value=320, max_value=1920, value=640, step=10)
+            with col2:
+                height = st.number_input("Height", min_value=240, max_value=1080, value=480, step=10)
+        else:
+            width, height = map(int, webcam_resolution.split('x'))
+        
+        # Store the webcam state
+        if 'webcam_running' not in st.session_state:
+            st.session_state.webcam_running = False
+        
+        # Create buttons to control webcam
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if not st.session_state.webcam_running:
+                if st.button("Start Webcam"):
+                    st.session_state.webcam_running = True
+                    st.session_state.webcam_error = None
+                    st.rerun()
+        
+        with col2:
+            if st.session_state.webcam_running:
+                if st.button("Stop Webcam"):
+                    st.session_state.webcam_running = False
+                    st.rerun()
+        
+        # Display information about browser permissions
+        st.info("Make sure to allow camera permissions in your browser when prompted.")
+        
+        # Create placeholders for webcam feed and error messages
+        stframe = st.empty()
+        status_text = st.empty()
+        
+        if st.session_state.webcam_running:
+            try:
+                # Determine the webcam source
+                if webcam_source == "Default Webcam (0)":
+                    cam_source = 0
+                elif webcam_source == "Secondary Webcam (1)":
+                    cam_source = 1
+                elif webcam_source == "Custom Device Path":
+                    cam_source = custom_path
+                elif webcam_source == "Browser-based (Streamlit Component)":
+                    # Use streamlit-webrtc if available (need to be installed)
+                    st.error("Please install streamlit-webrtc package to use browser-based webcam")
+                    st.code("pip install streamlit-webrtc")
+                    st.session_state.webcam_running = False
+                    st.rerun()
+                
+                # Open webcam with specified settings
+                cap = cv2.VideoCapture(cam_source)
+                
+                # Set resolution
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                
+                # Check if webcam opened successfully
+                if not cap.isOpened():
+                    st.error(f"Failed to open webcam source: {cam_source}")
+                    st.session_state.webcam_running = False
+                    
+                    # Provide more helpful diagnostics
+                    st.markdown("""
+                    ### Troubleshooting:
+                    1. Try a different webcam source
+                    2. Check if your camera is being used by another application
+                    3. Try running the app locally instead of deployed
+                    4. On Linux, check device permissions with `ls -l /dev/video*`
+                    """)
+                    
+                    # Try listing available cameras (Linux)
+                    try:
+                        import subprocess
+                        video_devices = subprocess.check_output("ls -l /dev/video*", shell=True).decode()
+                        st.code(video_devices)
+                    except:
+                        pass
+                    
+                    st.rerun()
+                
+                # Initialize detector
+                detector = YOLOv8Detector(
+                    model_path=model_path,
+                    labels=COCO_LABELS,
+                    confidence_threshold=confidence_threshold,
+                    iou_threshold=iou_threshold
+                )
+                
+                # Create a temporary file to save video if needed
+                temp_filename = None
+                out = None
+                
+                if save_video:
+                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+                    temp_filename = temp_file.name
+                    
+                    # Get webcam properties 
+                    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    fps = 20
+                    
+                    # Create VideoWriter object
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    out = cv2.VideoWriter(temp_filename, fourcc, fps, (frame_width, frame_height))
+                
+                # Show webcam info
+                actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                st.success(f"Webcam connected! Resolution: {actual_width}x{actual_height}")
+                
+                # Initialize frame counter and error counter
+                frame_count = 0
+                error_count = 0
+                max_errors = 5
+                
+                # Main webcam loop
+                while st.session_state.webcam_running and error_count < max_errors:
+                    ret, frame = cap.read()
+                    
+                    if not ret:
+                        error_count += 1
+                        st.warning(f"Failed to grab frame ({error_count}/{max_errors})")
+                        time.sleep(0.5)
+                        continue
+                    
+                    # Reset error counter on successful frame
+                    error_count = 0
+                    frame_count += 1
+                    
+                    try:
+                        # Detect objects
                         boxes, scores, class_ids, processed_frame = detector.detect(frame)
                         
+                        # Save frame if recording
+                        if save_video and out is not None:
+                            out.write(processed_frame)
+                        
                         # Convert to RGB for display
-                        processed_frame_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+                        rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
                         
-                        # Display the processed frame
-                        frame_placeholder.image(processed_frame_rgb, caption=f"Processing: Frame {frame_idx}", use_column_width=True)
+                        # Display frame
+                        stframe.image(rgb_frame, channels="RGB", use_container_width=True)
                         
-                        # Add to processed frames list (for future saving if needed)
-                        processed_frames.append(processed_frame)
+                        # Show detection count
+                        status_text.text(f"Frame: {frame_count} | Detected {len(boxes)} objects")
+                        
+                    except Exception as e:
+                        st.error(f"Error during detection: {e}")
+                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        stframe.image(rgb_frame, channels="RGB", use_container_width=True)
                     
-                    frame_idx += 1
+                    # Add slight delay to not overload the CPU
+                    time.sleep(0.01)
                 
-                # Release video
+                # Release resources
                 cap.release()
+                if save_video and out is not None:
+                    out.release()
+                    
+                    # Offer download link for recorded video
+                    with open(temp_filename, 'rb') as f:
+                        st.download_button(
+                            label="Download Recorded Video", 
+                            data=f,
+                            file_name="detection_video.mp4",
+                            mime="video/mp4"
+                        )
                 
-                # Clean up temp file
-                os.unlink(video_path)
+                # If stopped due to errors
+                if error_count >= max_errors:
+                    st.error("Stopped webcam due to repeated frame capture errors.")
+                    st.session_state.webcam_running = False
                 
-                st.success("Video processing complete!")
-    
-    # Footer
-    st.markdown("---")
-    st.markdown("""
-    <div style="text-align: center;">
-        <p>Powered by YOLOv8 and ONNX Runtime</p>
-        <p style="font-size: 0.8rem; color: #64748b;">
-            This app uses state-of-the-art object detection to identify and locate objects in images and videos.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
+            except Exception as e:
+                st.error(f"Webcam error: {str(e)}")
+                st.session_state.webcam_running = False
+                
+                # Provide troubleshooting help
+                st.markdown("""
+                ### Webcam Troubleshooting:
+                
+                1. **Browser permissions**: Make sure your browser has permission to access the camera
+                2. **Hardware access**: In cloud deployments, webcam access may be limited
+                3. **Alternative approach**: Consider installing the alternative package for browser-based capture:
+                """)
+                st.code("pip install streamlit-webrtc")
+                
+                # Add option for trying an alternative method
+                if st.button("Try Alternative Method"):
+                    st.session_state.try_alt_method = True
+                    st.rerun()
+        
+        # Show a placeholder message when webcam is not running
+        if not st.session_state.webcam_running:
+            stframe.info("Click 'Start Webcam' to begin detection")
+            
+        # Add browser-based fallback option using streamlit-webrtc if installed
+        if 'try_alt_method' in st.session_state and st.session_state.try_alt_method:
+            st.subheader("Alternative Webcam Method")
+            try:
+                import streamlit_webrtc
+                st.success("streamlit-webrtc is installed!")
+                st.info("This component allows webcam access via browser APIs, which may work better in deployed environments.")
+                # Implementation would go here
+            except ImportError:
+                st.error("streamlit-webrtc is not installed. Install it with: pip install streamlit-webrtc")
+    with tab3:
+        st.header("About")
+        st.markdown("""
+        ## YOLOv8 Object Detection App
+        
+        This application uses the YOLOv8 object detection model converted to ONNX format for efficient inference.
+        
+        ### Features:
+        - Support for multiple YOLOv8 model variants
+        - Image upload and webcam support
+        - Adjustable confidence and IoU thresholds
+        - Detection visualization with bounding boxes
+        - Detection statistics
+        - Option to save and download results
+        
+        ### How to use:
+        1. Select a model from the sidebar
+        2. Adjust detection parameters if needed
+        3. Upload an image or use your webcam
+        4. View detection results
+        
+        ### Requirements:
+        - OpenCV
+        - ONNX Runtime
+        - Streamlit
+        - NumPy
+        - Pillow
+        
+        ### Models:
+        Place the YOLOv8 ONNX models in the same directory as this script:
+        - yolov8n.onnx (Nano version)
+        - yolov8s.onnx (Small version)
+        - yolov8m.onnx (Medium version)
+        - yolov8l.onnx (Large version)
+        """)
 
 if __name__ == "__main__":
     main()
