@@ -389,18 +389,21 @@ COCO_LABELS = [
     "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
     "scissors", "teddy bear", "hair drier", "toothbrush"
 ]
-class VideoProcessor:
-    def __init__(self, detector):
-        self.detector = detector
-        
+class SimpleVideoProcessor:
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
-        
-        # Use your existing YOLOv8Detector
-        boxes, scores, class_ids, processed_img = self.detector.detect(img)
-        
-        # Return processed frame
-        return av.VideoFrame.from_ndarray(processed_img, format="bgr24")
+        # Just add some text instead of complex processing
+        cv2.putText(img, "Testing WebRTC", (50, 50), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+# Test with simple processor first
+simple_processor = SimpleVideoProcessor()
+webrtc_ctx = streamlit_webrtc.webrtc_streamer(
+    key="object-detection-test",
+    video_processor_factory=lambda: simple_processor,
+    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+)
 def load_custom_css():
     st.markdown("""
     <style>
