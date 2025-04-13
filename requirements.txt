@@ -1,8 +1,8 @@
-aiortc==1.5.0  # Downgrade to more stable version
 aioice==0.9.0
+aiortc==1.11.0
 altair==5.5.0
 attrs==25.3.0
-av==10.0.0
+av==14.2.0
 blinker==1.9.0
 cachetools==5.5.2
 certifi==2025.1.31
@@ -61,8 +61,8 @@ scipy==1.15.2
 seaborn==0.13.2
 six==1.17.0
 smmap==5.0.2
-streamlit==1.31.0  # Downgrade to a more stable version
-streamlit-webrtc==0.47.1
+streamlit==1.44.0
+streamlit-webrtc==0.54.0
 sympy==1.13.1
 tenacity==9.0.0
 toml==0.10.2
