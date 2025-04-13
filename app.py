@@ -9,7 +9,7 @@ import tempfile
 import io
 import av
 import streamlit_webrtc
-import asyncio
+from streamlit_webrtc import RTCConfiguration, WebRtcMode
 # Import your existing YOLOv8Detector class
 # This is the exact same class from your code, unchanged
 class YOLOv8Detector:
@@ -892,23 +892,6 @@ def main():
 
         if webcam_method == "WebRTC (better for deployed apps)":
             try:
-                # Check if the streamlit-webrtc package is available
-                
-                # Set up asyncio event loop
-                async def ensure_event_loop():
-                    try:
-                        loop = asyncio.get_event_loop()
-                    except RuntimeError:
-                        # If there's no event loop, create a new one and set it as the default
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                    return loop
-                
-                # Make sure we have an event loop
-                if 'event_loop' not in st.session_state:
-                    st.session_state.event_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(st.session_state.event_loop)
-                
                 st.info("📹 Using browser-based WebRTC for webcam access. Allow camera permissions when prompted.")
                 
                 # Initialize the detector
@@ -922,31 +905,24 @@ def main():
                 # Create video processor class
                 processor = VideoProcessor(detector)
                 
-                # Add custom styling to the WebRTC component
-                st.markdown("""
-                <style>
-                .webrtc-container video {
-                    border-radius: 10px;
-                    border: 2px solid #3b82f6;
-                }
-                </style>
-                """, unsafe_allow_html=True)
+                # Define RTC configuration with multiple STUN servers
+                rtc_configuration = RTCConfiguration(
+                    {"iceServers": [
+                        {"urls": ["stun:stun.l.google.com:19302", 
+                                "stun:stun1.l.google.com:19302", 
+                                "stun:stun2.l.google.com:19302"]}
+                    ]}
+                )
                 
-                # Define STUN servers for WebRTC
-                rtc_configuration = {
-                    "iceServers": [
-                        {"urls": ["stun:stun.l.google.com:19302"]}
-                    ]
-                }
-                
-                # Create WebRTC streamer with STUN server configuration
+                # Create WebRTC streamer with improved configuration
                 try:
                     webrtc_ctx = streamlit_webrtc.webrtc_streamer(
                         key="object-detection",
-                        video_processor_factory=lambda: processor,
+                        mode=WebRtcMode.SENDRECV,  # Explicit mode setting
+                        rtc_configuration=rtc_configuration,
                         media_stream_constraints={"video": True, "audio": False},
-                        async_processing=False,  # Changed to False for better compatibility
-                        rtc_configuration=rtc_configuration
+                        video_processor_factory=lambda: processor,
+                        async_processing=True,  # Try both True and False if issues persist
                     )
                     
                     # Show status with better formatting
@@ -968,6 +944,14 @@ def main():
                 except Exception as e:
                     st.error(f"WebRTC error: {str(e)}")
                     st.info("Try using the OpenCV webcam option instead, or check your browser's WebRTC compatibility.")
+                    
+                # Note about recording
+                if save_video:
+                    st.info("ℹ️ Video saving is not supported in WebRTC mode in this implementation.")
+                
+            except ImportError:
+                st.error("❌ streamlit-webrtc package is not installed.")
+                st.info("💡 To install it, run: pip install streamlit-webrtc")
                     
                 # Note about recording
                 if save_video:
