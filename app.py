@@ -9,6 +9,7 @@ import tempfile
 import io
 import av
 import streamlit_webrtc
+import asyncio
 # Import your existing YOLOv8Detector class
 # This is the exact same class from your code, unchanged
 class YOLOv8Detector:
@@ -892,7 +893,21 @@ def main():
         if webcam_method == "WebRTC (better for deployed apps)":
             try:
                 # Check if the streamlit-webrtc package is available
-                import streamlit_webrtc
+                
+                # Set up asyncio event loop
+                async def ensure_event_loop():
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        # If there's no event loop, create a new one and set it as the default
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    return loop
+                
+                # Make sure we have an event loop
+                if 'event_loop' not in st.session_state:
+                    st.session_state.event_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(st.session_state.event_loop)
                 
                 st.info("📹 Using browser-based WebRTC for webcam access. Allow camera permissions when prompted.")
                 
@@ -925,30 +940,34 @@ def main():
                 }
                 
                 # Create WebRTC streamer with STUN server configuration
-                webrtc_ctx = streamlit_webrtc.webrtc_streamer(
-                    key="object-detection",
-                    video_processor_factory=lambda: processor,
-                    media_stream_constraints={"video": True, "audio": False},
-                    async_processing=True,
-                    rtc_configuration=rtc_configuration,  # Add this line
-                )
-                
-                # Show status with better formatting
-                if webrtc_ctx.state.playing:
-                    st.success("✅ Webcam is streaming! Object detection is being applied to the video feed.")
+                try:
+                    webrtc_ctx = streamlit_webrtc.webrtc_streamer(
+                        key="object-detection",
+                        video_processor_factory=lambda: processor,
+                        media_stream_constraints={"video": True, "audio": False},
+                        async_processing=False,  # Changed to False for better compatibility
+                        rtc_configuration=rtc_configuration
+                    )
                     
-                    # Add a stats container
-                    stats_container = st.container()
-                    with stats_container:
-                        st.markdown("""
-                        <div class="detection-box">
-                            <h3 style="margin-top: 0;">Detection Stats</h3>
-                            <p>Real-time object detection is active. Detection results are shown directly in the video feed.</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.warning("⚠️ Click 'START' above to begin streaming from your webcam.")
-                    st.info("💡 If the camera doesn't start, make sure you've granted camera permissions to this website.")
+                    # Show status with better formatting
+                    if webrtc_ctx.state.playing:
+                        st.success("✅ Webcam is streaming! Object detection is being applied to the video feed.")
+                        
+                        # Add a stats container
+                        stats_container = st.container()
+                        with stats_container:
+                            st.markdown("""
+                            <div class="detection-box">
+                                <h3 style="margin-top: 0;">Detection Stats</h3>
+                                <p>Real-time object detection is active. Detection results are shown directly in the video feed.</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    else:
+                        st.warning("⚠️ Click 'START' above to begin streaming from your webcam.")
+                        st.info("💡 If the camera doesn't start, make sure you've granted camera permissions to this website.")
+                except Exception as e:
+                    st.error(f"WebRTC error: {str(e)}")
+                    st.info("Try using the OpenCV webcam option instead, or check your browser's WebRTC compatibility.")
                     
                 # Note about recording
                 if save_video:
