@@ -960,294 +960,115 @@ def main():
             except ImportError:
                 st.error("❌ streamlit-webrtc package is not installed.")
                 st.info("💡 To install it, run: pip install streamlit-webrtc")
-        else:
-            # Enhanced OpenCV-based implementation
-            # Add webcam selection options with better UI
-            st.markdown("""
-            <div class="detection-box">
-                <h3 style="margin-top: 0;">Webcam Configuration</h3>
-            """, unsafe_allow_html=True)
-            
-            webcam_source = st.selectbox(
-                "Webcam Source",
-                ["Default Webcam (0)", "Secondary Webcam (1)", "Custom Device Path"],
-                index=0
-            )
-            
-            if webcam_source == "Custom Device Path":
-                custom_path = st.text_input("Device Path (e.g., /dev/video0)", "/dev/video0")
-            
-            # Add resolution settings with visual enhancement
-            webcam_resolution = st.selectbox(
-                "Webcam Resolution",
-                ["640x480", "800x600", "1280x720", "Custom"],
-                index=0
-            )
-            
-            if webcam_resolution == "Custom":
-                col1, col2 = st.columns(2)
-                with col1:
-                    width = st.number_input("Width", min_value=320, max_value=1920, value=640, step=10)
-                with col2:
-                    height = st.number_input("Height", min_value=240, max_value=1080, value=480, step=10)
-            else:
-                width, height = map(int, webcam_resolution.split('x'))
-            
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-            # Store the webcam state
-            if 'webcam_running' not in st.session_state:
-                st.session_state.webcam_running = False
-            
-            # Create visually appealing control buttons
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if not st.session_state.webcam_running:
-                    if st.button("▶️ Start Webcam", type="primary", use_container_width=True):
-                        st.session_state.webcam_running = True
-                        st.session_state.webcam_error = None
-                        st.rerun()
-            
-            with col2:
-                if st.session_state.webcam_running:
-                    if st.button("⏹️ Stop Webcam", type="secondary", use_container_width=True):
-                        st.session_state.webcam_running = False
-                        st.rerun()
-            
-            # Display information about browser permissions
-            st.info("🔒 Make sure to allow camera permissions in your browser when prompted.")
-            
-            # Create placeholders for webcam feed and error messages
-            stframe = st.empty()
-            status_text = st.empty()
-            
-            if st.session_state.webcam_running:
-                try:
-                    # Determine the webcam source
-                    if webcam_source == "Default Webcam (0)":
-                        cam_source = 0
-                    elif webcam_source == "Secondary Webcam (1)":
-                        cam_source = 1
-                    elif webcam_source == "Custom Device Path":
-                        cam_source = custom_path
-                    
-                    # Open webcam with specified settings
-                    cap = cv2.VideoCapture(cam_source)
-                    
-                    # Set resolution
-                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-                    
-                    # Check if webcam opened successfully
-                    if not cap.isOpened():
-                        st.error(f"❌ Failed to open webcam source: {cam_source}")
-                        st.session_state.webcam_running = False
-                        
-                        # Provide more helpful diagnostics with better formatting
-                        st.markdown("""
-                        <div class="detection-box">
-                            <h3 style="margin-top: 0;">Troubleshooting</h3>
-                            <ol>
-                                <li>Try a different webcam source</li>
-                                <li>Check if your camera is being used by another application</li>
-                                <li>Try running the app locally instead of deployed</li>
-                                <li>On Linux, check device permissions with <code>ls -l /dev/video*</code></li>
-                            </ol>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        # Try listing available cameras (Linux)
-                        try:
-                            import subprocess
-                            video_devices = subprocess.check_output("ls -l /dev/video*", shell=True).decode()
-                            st.code(video_devices)
-                        except:
-                            pass
-                        
-                        st.rerun()
-                    
-                    # Initialize detector
-                    detector = YOLOv8Detector(
-                        model_path=model_path,
-                        labels=COCO_LABELS,
-                        confidence_threshold=confidence_threshold,
-                        iou_threshold=iou_threshold
-                    )
-                    
-                    # Create a temporary file to save video if needed
-                    temp_filename = None
-                    out = None
-                    
-                    if save_video:
-                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-                        temp_filename = temp_file.name
-                        
-                        # Get webcam properties 
-                        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        fps = 20
-                        
-                        # Create VideoWriter object
-                        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                        out = cv2.VideoWriter(temp_filename, fourcc, fps, (frame_width, frame_height))
-                    
-                    # Show webcam info with better styling
-                    actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                    actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    st.success(f"✅ Webcam connected! Resolution: {actual_width}x{actual_height}")
-                    
-                    # Initialize frame counter and error counter
-                    frame_count = 0
-                    error_count = 0
-                    max_errors = 5
-                    
-                    # Create a container for stats
-                    stats_col1, stats_col2, stats_col3 = st.columns(3)
-                    
-                    with stats_col1:
-                        frame_metric = st.empty()
-                    with stats_col2:
-                        fps_metric = st.empty()
-                    with stats_col3:
-                        object_metric = st.empty()
-                        
-                    # Empty container for detection stats
-                    detection_stats = st.empty()
-                    
-                    # Progress bar for recording (if enabled)
-                    if save_video:
-                        record_progress = st.progress(0)
-                    
-                    # Main webcam loop
-                    start_time = time.time()
-                    fps_counter = 0
-                    fps_value = 0
-                    last_fps_update = start_time
-                    
-                    # Detection stats
-                    class_counts = {}
-                    
-                    while st.session_state.webcam_running and error_count < max_errors:
-                        ret, frame = cap.read()
-                        
-                        if not ret:
-                            error_count += 1
-                            st.warning(f"⚠️ Failed to grab frame ({error_count}/{max_errors})")
-                            time.sleep(0.5)
-                            continue
-                        
-                        # Reset error counter on successful frame
-                        error_count = 0
-                        frame_count += 1
-                        fps_counter += 1
-                        
-                        # Update FPS calculation every second
-                        if time.time() - last_fps_update >= 1.0:
-                            fps_value = fps_counter / (time.time() - last_fps_update)
-                            fps_counter = 0
-                            last_fps_update = time.time()
-                        
-                        try:
-                            # Detect objects
-                            boxes, scores, class_ids, processed_frame = detector.detect(frame)
-                            
-                            # Update detection stats
-                            for class_id in class_ids:
-                                class_name = COCO_LABELS[class_id] if 0 <= class_id < len(COCO_LABELS) else "Unknown"
-                                class_counts[class_name] = class_counts.get(class_name, 0) + 1
-                            
-                            # Save frame if recording
-                            if save_video and out is not None:
-                                out.write(processed_frame)
-                                # Update progress bar (simulating progress)
-                                elapsed = time.time() - start_time
-                                if elapsed < 60:  # Assume 1 minute max
-                                    record_progress.progress(min(elapsed / 60, 1.0))
-                            
-                            # Convert to RGB for display
-                            rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
-                            
-                            # Display frame
-                            stframe.image(rgb_frame, channels="RGB", use_container_width=True)
-                            
-                            # Update metrics
-                            frame_metric.metric("Frame", frame_count)
-                            fps_metric.metric("FPS", f"{fps_value:.1f}")
-                            object_metric.metric("Objects", len(boxes))
-                            
-                            # Show detection stats
-                            if frame_count % 30 == 0 and class_counts:  # Update every 30 frames
-                                # Sort by count and get top 5
-                                sorted_counts = sorted(class_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-                                
-                                # Create HTML for stats
-                                stats_html = """
-                                <div class="detection-box">
-                                    <h3 style="margin-top: 0;">Detection Stats</h3>
-                                    <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-                                """
-                                
-                                for class_name, count in sorted_counts:
-                                    # Generate a color based on the class name
-                                    import hashlib
-                                    hue = int(hashlib.md5(class_name.encode()).hexdigest(), 16) % 360
-                                    stats_html += f"""
-                                    <div style="background-color: hsl({hue}, 70%, 90%); 
-                                                padding: 8px 16px; 
-                                                border-radius: 16px;
-                                                border: 1px solid hsl({hue}, 70%, 80%);">
-                                        <span style="font-weight: 600;">{class_name}</span>: {count}
-                                    </div>
-                                    """
-                                
-                                stats_html += """
-                                    </div>
-                                </div>
-                                """
-                                
-                                detection_stats.markdown(stats_html, unsafe_allow_html=True)
-                            
-                        except Exception as e:
-                            st.error(f"Error during detection: {e}")
-                            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            stframe.image(rgb_frame, channels="RGB", use_container_width=True)
-                        
-                        # Add slight delay to not overload the CPU
-                        time.sleep(0.01)
-                    
-                    # Release resources
-                    cap.release()
-                    if save_video and out is not None:
-                        out.release()
-                        
-                        # Offer download link for recorded video with better styling
-                        st.markdown("""
-                        <div class="success-message">
-                            <h3 style="margin-top: 0;">Video Recording Complete</h3>
-                            <p>Your recording is ready to download!</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        with open(temp_filename, 'rb') as f:
-                            st.download_button(
-                                label="💾 Download Recorded Video", 
-                                data=f,
-                                file_name="detection_video.mp4",
-                                mime="video/mp4",
-                                type="primary",
-                                use_container_width=True
-                            )
-                    
-                    # If stopped due to errors
-                    if error_count >= max_errors:
-                        st.error("❌ Stopped webcam due to repeated frame capture errors.")
-                        st.session_state.webcam_running = False
-                    
-                except Exception as e:
-                    st.error(f"❌ Webcam error: {str(e)}")
+        # Update your OpenCV webcam implementation to be more deployment-friendly
+            else:  # OpenCV implementation
+                # Enhanced OpenCV-based implementation
+                st.markdown("""
+                <div class="detection-box">
+                    <h3 style="margin-top: 0;">Webcam Configuration</h3>
+                """, unsafe_allow_html=True)
+                
+                # Simplify webcam source - less options but more reliable in deployment
+                webcam_source = st.selectbox(
+                    "Webcam Source",
+                    ["Default Webcam (0)"]
+                )
+                
+                # Fixed resolution that works well in most cases
+                width, height = 640, 480
+                
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+                # Store the webcam state
+                if 'webcam_running' not in st.session_state:
                     st.session_state.webcam_running = False
-                    st.info("Please try a different webcam source or method.")
+                
+                # Create visually appealing control buttons
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if not st.session_state.webcam_running:
+                        if st.button("▶️ Start Webcam", type="primary", use_container_width=True):
+                            st.session_state.webcam_running = True
+                            st.rerun()
+                
+                with col2:
+                    if st.session_state.webcam_running:
+                        if st.button("⏹️ Stop Webcam", type="secondary", use_container_width=True):
+                            st.session_state.webcam_running = False
+                            st.rerun()
+                
+                # Create placeholders for webcam feed and error messages
+                stframe = st.empty()
+                status_text = st.empty()
+                
+                if st.session_state.webcam_running:
+                    try:
+                        # Set source to 0 (default camera)
+                        cam_source = 0
+                        
+                        # Open webcam with reliable settings for deployment
+                        cap = cv2.VideoCapture(cam_source)
+                        
+                        # Set resolution (but be ready for it to be ignored)
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                        
+                        # Check if webcam opened successfully
+                        if not cap.isOpened():
+                            st.error(f"❌ Failed to open webcam")
+                            st.session_state.webcam_running = False
+                            st.info("Your browser or deployment environment may not support webcam access.")
+                            st.rerun()
+                        
+                        # Initialize detector
+                        detector = YOLOv8Detector(
+                            model_path=model_path,
+                            labels=COCO_LABELS,
+                            confidence_threshold=confidence_threshold,
+                            iou_threshold=iou_threshold
+                        )
+                        
+                        # Frame processing loop with better error handling
+                        frame_count = 0
+                        error_count = 0
+                        max_errors = 5
+                        
+                        while st.session_state.webcam_running and error_count < max_errors:
+                            ret, frame = cap.read()
+                            
+                            if not ret:
+                                error_count += 1
+                                status_text.warning(f"⚠️ Failed to grab frame ({error_count}/{max_errors})")
+                                time.sleep(0.5)
+                                continue
+                            
+                            # Process frame - with error handling
+                            try:
+                                boxes, scores, class_ids, processed_frame = detector.detect(frame)
+                                rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+                                stframe.image(rgb_frame, channels="RGB", use_container_width=True)
+                            except Exception as e:
+                                status_text.error(f"Processing error: {str(e)}")
+                                # Show original frame at least
+                                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                stframe.image(rgb_frame, channels="RGB", use_container_width=True)
+                            
+                            # Brief pause to avoid UI thread starvation
+                            time.sleep(0.05)
+                            frame_count += 1
+                        
+                        # Release resources
+                        cap.release()
+                        
+                        if error_count >= max_errors:
+                            st.error("❌ Webcam disconnected due to errors")
+                            st.session_state.webcam_running = False
+                            
+                    except Exception as e:
+                        st.error(f"❌ Webcam access error: {str(e)}")
+                        st.info("Your browser or deployment environment may not support webcam access.")
+                        st.session_state.webcam_running = False
                     
                     # Show detailed error with better formatting
                     st.markdown(f"""
