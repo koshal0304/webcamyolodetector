@@ -1,5 +1,5 @@
 aioice==0.9.0
-aiortc==1.11.0
+aiortc==1.4.0
 altair==5.5.0
 attrs==25.3.0
 av==14.2.0
@@ -37,8 +37,7 @@ numpy==2.1.1
 onnx==1.17.0
 onnxruntime==1.20.1
 onnxslim==0.1.48
-opencv-python==4.11.0.86
-opencv-python-headless==4.11.0.86
+opencv-python-headless==4.8.1.78
 packaging==24.2
 pandas==2.2.3
 pillow==11.1.0
